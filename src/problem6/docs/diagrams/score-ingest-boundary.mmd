@@ -1,0 +1,54 @@
+sequenceDiagram
+    autonumber
+    participant WC as Website Client
+    participant TAS as Trusted Action Service
+    participant SAE as Score API Edge
+    participant SC as Security Controls
+
+    alt Browser-adjacent submission with signed grant
+        WC->>TAS: Completed action proof
+        TAS-->>WC: Signed one-time score grant
+        WC->>SAE: POST /v1/score-events + grant + Idempotency-Key
+    else Trusted service-to-service caller submission
+        TAS->>SAE: POST /v1/score-events + service credential + Idempotency-Key
+    end
+
+    SAE->>SC: request schema validation
+    alt Schema invalid
+        SC-->>SAE: reject malformed request
+        SAE-->>WC: 422 Unprocessable Entity
+    else Schema valid
+        SAE->>SC: caller authentication
+        alt Missing or invalid auth
+            SC-->>SAE: reject unauthenticated caller
+            SAE-->>WC: 401 Unauthorized
+        else Authenticated
+            SAE->>SC: issuer allowlist + grant expiry + user binding
+            alt Unknown issuer
+                SC-->>SAE: issuer not allowed
+                SAE-->>WC: 403 Forbidden
+            else Expired grant or user mismatch
+                SC-->>SAE: trusted evidence invalid
+                SAE-->>WC: 422 Unprocessable Entity
+            else Trusted evidence valid
+                SAE->>SC: points policy + nonce/idempotency pre-check
+                alt Points policy violation or nonce reuse
+                    SC-->>SAE: pre-mutation rejection
+                    SAE-->>WC: 422 Unprocessable Entity
+                else Reused idempotency key with conflicting payload
+                    SC-->>SAE: idempotency conflict
+                    SAE-->>WC: 409 Conflict
+                else Pre-checks pass
+                    SAE->>SC: per IP / invalid signature / per issuer / per subject user throttling
+                    alt Throttle exceeded
+                        SC-->>SAE: rate limit triggered
+                        SAE-->>WC: 429 Too Many Requests
+                    else All Phase 1 gates pass
+                        SC-->>SAE: approved for mutation path
+                        Note over SAE: score-command handoff to later persistence phase
+                        SAE-->>WC: 202 Accepted
+                    end
+                end
+            end
+        end
+    end
