@@ -7,6 +7,7 @@ import { Plus, Pencil, Trash2, Users, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { UserForm } from '@/components/user-form';
+import { UserDetailPanel } from '@/components/user-detail-panel';
 import { PaginationBar } from '@/components/pagination-bar';
 import { api } from '@/lib/api-client';
 import type { User } from 'shared/types/user';
@@ -18,6 +19,7 @@ export default function UsersPage() {
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState('');
   const [department, setDepartment] = useState('');
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['users'],
@@ -145,7 +147,7 @@ export default function UsersPage() {
           {/* Rows */}
           <div className="divide-y divide-gray-50">
             {pageUsers.map((user) => (
-              <div key={user.id} className="grid grid-cols-[1fr_1.5fr_1fr_80px] gap-4 px-6 py-4 items-center hover:bg-orange-50/40 transition-colors">
+              <div key={user.id} className="grid grid-cols-[1fr_1.5fr_1fr_80px] gap-4 px-6 py-4 items-center hover:bg-orange-50/40 transition-colors cursor-pointer" onClick={() => setSelectedUserId(user.id)}>
                 <span className="font-bold text-gray-700 text-sm truncate">{user.name}</span>
                 <span className="text-sm text-gray-500 font-semibold truncate">{user.email}</span>
                 <span className="text-sm">
@@ -153,7 +155,7 @@ export default function UsersPage() {
                     {user.department || '—'}
                   </span>
                 </span>
-                <div className="flex justify-end gap-1">
+                <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                   <UserForm
                     user={user}
                     trigger={
@@ -199,6 +201,7 @@ export default function UsersPage() {
           )}
         </div>
       )}
+      <UserDetailPanel userId={selectedUserId} onClose={() => setSelectedUserId(null)} />
     </div>
   );
 }
