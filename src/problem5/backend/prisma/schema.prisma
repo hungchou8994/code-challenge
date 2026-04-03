@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id         String   @id @default(uuid())
+  name       String
+  email      String   @unique
+  department String
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  tasks             Task[]
+  scoreEvents       ScoreEvent[]
+  productivityScore ProductivityScore?
+
+  @@map("users")
+}
+
+model Task {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  status      String   @default("TODO")
+  priority    String
+  assigneeId  String?  @map("assignee_id")
+  dueDate     DateTime @map("due_date")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  assignee    User?    @relation(fields: [assigneeId], references: [id], onDelete: Restrict)
+  scoreEvents ScoreEvent[]
+
+  @@map("tasks")
+}
+
+model ScoreEvent {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  taskId       String   @map("task_id")
+  points       Int
+  bonus        Int      @default(0)
+  penalty      Int      @default(0)
+  totalAwarded Int      @map("total_awarded")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("score_events")
+}
+
+model ProductivityScore {
+  id             String   @id @default(uuid())
+  userId         String   @unique @map("user_id")
+  totalScore     Int      @default(0) @map("total_score")
+  tasksCompleted Int      @default(0) @map("tasks_completed")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("productivity_scores")
+}

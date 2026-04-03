@@ -1,0 +1,11 @@
+.planning/
+node_modules/
+dist/
+.env
+*.log
+.next/
+backend/prisma/*.db
+backend/src/generated/
+.opencode/
+.cursor/
+CLAUDE.md
