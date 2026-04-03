@@ -11,7 +11,7 @@
 
 Submit a score increment for an authenticated user. The server resolves the score delta from the supplied `action_type` against an internal action registry; the client never supplies a numeric score value. User identity is derived exclusively from the JWT `sub` claim.
 
-**Non-goals:** This section does not define the action registry schema or enumerate valid `action_type` values — those are implementation-specific and not part of this API contract. It also does not define the SSE broadcast triggered by a successful submission (see Phase 3 / `GET /leaderboard/stream`).
+**Non-goals:** This section does not define the action registry schema or enumerate valid `action_type` values — those are implementation-specific and not part of this API contract. It also does not define the SSE broadcast triggered by a successful submission (see `GET /leaderboard/stream`).
 
 ### Request
 
@@ -174,7 +174,7 @@ On success the server returns `200 OK` with the following response body:
 | `leaderboard` | array | Ranked entries ordered by `rank` ascending (rank 1 first, rank 10 last). |
 | `rank` | integer | Position in the leaderboard (1–10). Rank 1 is the highest scorer. |
 | `userId` | string | The user's unique identifier — the JWT `sub` claim value used at score submission time. |
-| `displayName` | string | Denormalized display string stored alongside the score record at write time. **Implementation note:** `displayName` MUST be populated at score write time (e.g., from the JWT payload or a user profile lookup at submission). It MUST NOT be fetched from a separate user service at read time, as that would add latency and introduce a dependency on the user profile service to the read path. |
+| `displayName` | string | Denormalized display string captured at score write time. `displayName` MUST be populated at score write time (e.g., from the JWT payload or a user profile lookup at submission) and MUST NOT be fetched from a separate user service at read time — this keeps the leaderboard read path self-contained with no external service dependency. |
 | `score` | integer | The user's cumulative total score. |
 
 **Example:**
@@ -199,9 +199,9 @@ Cache-Control: no-store
 
 ### Tie-Breaking
 
-**E-09:** When two or more users share identical scores, the user who reached that score value first SHALL hold the higher rank (lower rank number). The tiebreaker is the `last_score_updated` timestamp: the entry with the earlier timestamp wins the higher rank. This rule SHALL be applied consistently — it is a stable, deterministic ordering. *(Satisfies LB-02: eliminates non-deterministic rank assignment for equal-score users. Prevents gamification exploits where users deliberately match a target score to compete for rank via repeated submissions.)*
+**E-09:** When two or more users share identical scores, the user who reached that score value first SHALL hold the higher rank (lower rank number). The tiebreaker is the `score_reached_at` timestamp: the entry with the earlier timestamp wins the higher rank. `score_reached_at` records the moment the user's cumulative score was last increased — it is updated only when the score value changes, not by any other operation. This rule SHALL be applied consistently — it is a stable, deterministic ordering. *(Satisfies LB-02: eliminates non-deterministic rank assignment for equal-score users. Prevents gamification exploits where users deliberately match a target score to compete for rank via repeated submissions.)*
 
-**Implementation note:** One Redis implementation pattern for this rule is to encode a composite sort key: `score_value * 10^13 + (epoch_max − last_updated_epoch_ms)`, storing the composite as the sorted set score so that equal point values naturally sort older entries above newer ones. Alternatively, a Lua script can perform a stable sort with `last_score_updated` as a secondary comparator. The specific implementation is left to the team; the observable behavior (earlier `last_score_updated` timestamp wins higher rank) is the SHALL requirement.
+**Implementation note:** One Redis implementation pattern for this rule is to encode a composite sort key: `score_value * 10^13 + (epoch_max − score_reached_at_epoch_ms)`, storing the composite as the sorted set score so that equal point values naturally sort older entries above newer ones. Alternatively, a Lua script can perform a stable sort with `score_reached_at` as a secondary comparator. The specific implementation is left to the team; the observable behavior (earlier `score_reached_at` timestamp wins higher rank) is the SHALL requirement.
 
 ### Caching
 

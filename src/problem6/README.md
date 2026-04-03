@@ -10,7 +10,40 @@ This specification is written for a backend engineering team. It is the authorit
 
 ## Architecture Overview
 
-The module exposes three endpoints: `POST /scores` (authenticated write path), `GET /leaderboard` (public read path), and `GET /leaderboard/stream` (public real-time SSE stream). Score submissions are authenticated via JWT bearer tokens (HS256); the server resolves the score delta from the supplied `action_type` against an internal action registry and increments the user's cumulative score atomically using Redis `ZINCRBY`. The leaderboard is served directly from a Redis sorted set using `ZREVRANGE`, with no intermediate cache required. Connected SSE clients receive the full top-10 snapshot after each successful score update. Recommended stack: Node.js v22 LTS, Fastify v5, Redis v7+, JWT (HS256).
+The module exposes three endpoints: `POST /scores` (authenticated write path), `GET /leaderboard` (public read path), and `GET /leaderboard/stream` (public real-time SSE stream). Score submissions are authenticated via JWT bearer tokens (HS256); the server resolves the score delta from the supplied `action_type` against an internal action registry and increments the user's cumulative score atomically. The Redis sorted set is the low-latency ranking and read layer; PostgreSQL (or equivalent durable store) is the authoritative write-path ledger. Connected SSE clients receive the full top-10 snapshot after each successful score update. Recommended stack: Node.js v22 LTS, Fastify v5, PostgreSQL 17, Redis 8, JWT (HS256).
+
+---
+
+## Data Storage Model
+
+The module uses a dual-layer storage approach that separates durability from read performance.
+
+**Write path (durable):** Every accepted `POST /scores` request persists a score event record to PostgreSQL before touching Redis. PostgreSQL is the authoritative source of truth — the full event history is retained for audit, fraud review, and projection rebuilds.
+
+**Read/ranking layer (fast):** Redis sorted sets hold the live leaderboard state. The `ZINCRBY` operation updates the user's rank position atomically. `GET /leaderboard` and SSE broadcasts read from Redis, not from PostgreSQL, keeping read latency low.
+
+**Score submission flow:**
+
+```
+POST /scores
+  1. Validate JWT and request body
+  2. Atomic nonce check-and-store (Redis SET NX EX)
+  3. Persist score event to PostgreSQL (idempotent on event_id)
+  4. Atomic score increment in Redis (ZINCRBY)
+  5. Read updated top-10 snapshot (ZREVRANGE)
+  6. Return 201 to client
+  7. Broadcast leaderboard_update SSE event to all connected clients
+```
+
+**Failure modes:**
+
+| Failure | Behavior |
+|---------|----------|
+| Redis unavailable | Reject the request with `503`. Do not accept score submissions without the ranking layer — partial writes would cause score/rank divergence. |
+| PostgreSQL unavailable | Reject the request with `503`. The durable ledger is required before Redis is updated. |
+| Redis data loss (restart, eviction) | Rebuild the leaderboard projection by replaying `score_events` from PostgreSQL. A scheduled reconciliation job can detect and repair drift. |
+
+**Implementation note (non-normative):** The `displayName` field returned by `GET /leaderboard` and SSE events is denormalized into the score record at write time (captured from the JWT payload or a user profile lookup at submission). It MUST NOT be fetched from a separate user service at read time — denormalization eliminates read-path coupling to the user profile service and keeps leaderboard reads fast and self-contained. Display name update propagation (e.g., if a user changes their name) is out of scope for v1.
 
 ---
 
@@ -22,13 +55,13 @@ This security model defines the authentication and protection mechanisms for the
 
 ### Authentication
 
-**S-01:** The server SHALL accept only HS256 (HMAC-SHA256) as the JWT signing algorithm. The `alg` header field MUST be verified before any claim inspection. Tokens specifying `alg:none` or any algorithm other than `HS256` SHALL be rejected immediately with `401 Unauthorized`, regardless of signature validity. *(Prevents JWT algorithm confusion attacks and algorithm downgrade attacks in which an attacker strips the signature by setting `alg:none`.)*
+**S-01:** The server SHALL accept only HS256 (HMAC-SHA256) as the JWT signing algorithm. The server SHALL reject any token whose `alg` header value is not exactly `HS256` — including `alg:none`, RS256, ES256, or any other value — with `401 Unauthorized`, regardless of signature validity or claim content. *(Prevents JWT algorithm confusion attacks and algorithm downgrade attacks. The outcome requirement is that no token using a non-HS256 algorithm is ever treated as valid; the specific verification order is an implementation detail left to the JWT library.)*
 
-**S-02:** The server SHALL validate all six mandatory claims on every inbound request: `sub` (the user's identity — the score owner), `exp` (token expiry timestamp), `iat` (issued-at timestamp, used for clock skew validation), `nbf` (not-before timestamp — token MUST NOT be accepted before this time; if `nbf` is present and the current time is before `nbf`, the token is rejected), `iss` (issuer — must exactly match the server-configured issuer string), and `aud` (audience — must exactly match the server-configured audience string). A token that is missing any of these claims, or that presents any claim value that does not pass validation, SHALL be rejected with `401 Unauthorized`. *(Prevents forged or partially constructed tokens from being accepted as legitimate credentials; `nbf` additionally prevents pre-issued tokens from being used before their intended validity window.)*
+**S-02:** The server SHALL validate all six mandatory claims on every inbound request: `sub` (the user's identity — the score owner), `exp` (token expiry timestamp), `iat` (issued-at timestamp, used for clock skew validation), `nbf` (not-before timestamp — the token is invalid before this time; the server SHALL reject any token whose `nbf` value is in the future relative to the current server time), `iss` (issuer — must exactly match the server-configured issuer string), and `aud` (audience — must exactly match the server-configured audience string). A token that is missing any of these six claims, or that presents any claim value that does not pass validation, SHALL be rejected with `401 Unauthorized`. *(Prevents forged or partially constructed tokens from being accepted as legitimate credentials; `nbf` prevents pre-issued tokens from being used before their intended validity window — a missing `nbf` is treated as a validation failure, not silently skipped.)*
 
 **S-03:** The server SHALL enforce a maximum JWT lifetime of 15 minutes via the `exp` claim. Specifically, `exp − iat` MUST be ≤ 900 seconds. Tokens for which this constraint is violated, or for which `exp` has already elapsed at the time of the request, SHALL be rejected with `401 Unauthorized` regardless of signature validity. *(Reduces the window of opportunity for token-theft replay attacks: a stolen token becomes useless within 15 minutes.)*
 
-**S-04:** `POST /scores` SHALL require the JWT to be presented in the `Authorization: Bearer <token>` HTTP request header. Requests that omit this header, or that present it with a value that is not a well-formed Bearer token, SHALL be rejected with `401 Unauthorized`. *(Note: SSE connection authentication via `GET /leaderboard/stream` uses a different mechanism — the `EventSource` browser API does not support custom headers. That mechanism is specified in Phase 3.)*
+**S-04:** `POST /scores` SHALL require the JWT to be presented in the `Authorization: Bearer <token>` HTTP request header. Requests that omit this header, or that present it with a value that is not a well-formed Bearer token, SHALL be rejected with `401 Unauthorized`. `GET /leaderboard/stream` is a public endpoint and does not require JWT authentication; browser-origin abuse on the public stream is mitigated via Origin allowlist validation defined in S-13. *(Prevents unauthenticated score submission; the `EventSource` browser API does not support custom request headers, which is why the SSE stream uses Origin-based abuse mitigation rather than Bearer tokens.)*
 
 ### Anti-Cheat / IDOR Prevention
 
@@ -48,13 +81,13 @@ This security model defines the authentication and protection mechanisms for the
 
 ### Response Headers
 
-**S-10:** All API responses SHALL include the header `Cache-Control: no-store`. This applies to both success and error responses across all endpoints. *(Prevents stale score data from being served by intermediary caches and prevents leaderboard snapshots from being stored in shared or private caches where they could be observed by other parties.)*
+**S-10:** All API responses SHALL include `Cache-Control: no-store`, with one explicit exception: the `GET /leaderboard/stream` SSE response SHALL use `Cache-Control: no-cache` instead, as required by the SSE specification for browser `EventSource` compatibility. All other endpoints — including error responses — use `no-store`. *(Prevents stale score data from being served by intermediary caches. The SSE carve-out is not a security relaxation — `no-cache` on a streaming `text/event-stream` response prevents proxy buffering and ensures each event frame is delivered immediately to the client.)*
 
 **S-11:** All API responses SHALL include the header `Strict-Transport-Security: max-age=63072000; includeSubDomains` (a 2-year HSTS policy). *(Instructs compliant browsers to enforce HTTPS for all future connections to this origin, preventing SSL-stripping attacks in which an active network attacker downgrades HTTPS to HTTP before the first request.)*
 
 **S-12:** All API responses SHALL include the header `X-Content-Type-Options: nosniff`. *(Prevents MIME-type sniffing attacks in which a browser ignores the declared `Content-Type` and executes a response body as a different content type, such as JavaScript.)*
 
-**S-13:** The server SHALL validate the `Origin` header on all SSE (`GET /leaderboard/stream`) and WebSocket upgrade requests against a server-configured allowlist of permitted origins. Requests whose `Origin` value is absent from the allowlist SHALL be rejected with `403 Forbidden`. *(Prevents Cross-Site WebSocket Hijacking (CSWSH): without an Origin check, a malicious third-party page loaded in a user's browser can silently open an SSE or WebSocket connection to the scoreboard stream using the user's credentials, leaking live score data to the attacker's origin.)*
+**S-13:** The server SHALL validate the `Origin` header on all SSE (`GET /leaderboard/stream`) requests against a server-configured allowlist of permitted origins. Requests whose `Origin` value is absent from the allowlist SHALL be rejected with `403 Forbidden`. *(Provides browser-origin abuse mitigation for the public stream: without an Origin check, a malicious third-party page loaded in a user's browser can silently open an SSE connection to the scoreboard stream using the user's network identity, leaking live score data to the attacker's origin. Note: non-browser clients may not send an `Origin` header; this control is effective as a browser cross-site abuse restriction, not as a general authentication or authorization mechanism.)*
 
 ---
 
@@ -162,7 +195,7 @@ Cache-Control: no-store
 
 Submit a score increment for an authenticated user. The server resolves the score delta from the supplied `action_type` against an internal action registry; the client never supplies a numeric score value. User identity is derived exclusively from the JWT `sub` claim.
 
-**Non-goals:** This section does not define the action registry schema or enumerate valid `action_type` values — those are implementation-specific and not part of this API contract. It also does not define the SSE broadcast triggered by a successful submission (see Phase 3 / `GET /leaderboard/stream`).
+**Non-goals:** This section does not define the action registry schema or enumerate valid `action_type` values — those are implementation-specific and not part of this API contract. It also does not define the SSE broadcast triggered by a successful submission (see `GET /leaderboard/stream`).
 
 ### Request
 
@@ -325,7 +358,7 @@ On success the server returns `200 OK` with the following response body:
 | `leaderboard` | array | Ranked entries ordered by `rank` ascending (rank 1 first, rank 10 last). |
 | `rank` | integer | Position in the leaderboard (1–10). Rank 1 is the highest scorer. |
 | `userId` | string | The user's unique identifier — the JWT `sub` claim value used at score submission time. |
-| `displayName` | string | Denormalized display string stored alongside the score record at write time. **Implementation note:** `displayName` MUST be populated at score write time (e.g., from the JWT payload or a user profile lookup at submission). It MUST NOT be fetched from a separate user service at read time, as that would add latency and introduce a dependency on the user profile service to the read path. |
+| `displayName` | string | Denormalized display string captured at score write time. See § Data Storage Model for the denormalization rationale. |
 | `score` | integer | The user's cumulative total score. |
 
 **Example:**
@@ -350,9 +383,9 @@ Cache-Control: no-store
 
 ### Tie-Breaking
 
-**E-09:** When two or more users share identical scores, the user who reached that score value first SHALL hold the higher rank (lower rank number). The tiebreaker is the `last_score_updated` timestamp: the entry with the earlier timestamp wins the higher rank. This rule SHALL be applied consistently — it is a stable, deterministic ordering. *(Satisfies LB-02: eliminates non-deterministic rank assignment for equal-score users. Prevents gamification exploits where users deliberately match a target score to compete for rank via repeated submissions.)*
+**E-09:** When two or more users share identical scores, the user who reached that score value first SHALL hold the higher rank (lower rank number). The tiebreaker is the `score_reached_at` timestamp: the entry with the earlier timestamp wins the higher rank. `score_reached_at` records the moment the user's cumulative score was last increased — it is updated only when the score value changes, not by any other operation. This rule SHALL be applied consistently — it is a stable, deterministic ordering. *(Satisfies LB-02: eliminates non-deterministic rank assignment for equal-score users. Prevents gamification exploits where users deliberately match a target score to compete for rank via repeated submissions.)*
 
-**Implementation note:** One Redis implementation pattern for this rule is to encode a composite sort key: `score_value * 10^13 + (epoch_max − last_updated_epoch_ms)`, storing the composite as the sorted set score so that equal point values naturally sort older entries above newer ones. Alternatively, a Lua script can perform a stable sort with `last_score_updated` as a secondary comparator. The specific implementation is left to the team; the observable behavior (earlier `last_score_updated` timestamp wins higher rank) is the SHALL requirement.
+**Implementation note:** One Redis implementation pattern for this rule is to encode a composite sort key: `score_value * 10^13 + (epoch_max − score_reached_at_epoch_ms)`, storing the composite as the sorted set score so that equal point values naturally sort older entries above newer ones. Alternatively, a Lua script can perform a stable sort with `score_reached_at` as a secondary comparator. The specific implementation is left to the team; the observable behavior (earlier `score_reached_at` timestamp wins higher rank) is the SHALL requirement.
 
 ### Caching
 
@@ -376,7 +409,7 @@ Cache-Control: no-store
 
 Delivers real-time leaderboard updates over Server-Sent Events (SSE). This endpoint is publicly readable — no authentication is required to establish a connection, consistent with `GET /leaderboard`. The server pushes the full current top-10 snapshot to all connected clients whenever a score change occurs.
 
-**Non-goals:** This section does not specify SSE reconnect behavior, heartbeat keepalive interval, or `Last-Event-ID` handling. Those concerns are deferred and are not SHALL requirements for v1.
+**Non-goals:** This section does not specify SSE reconnect behavior, heartbeat keepalive interval, or `Last-Event-ID` handling. Those concerns are out of scope for v1.
 
 ### Request
 
@@ -394,7 +427,7 @@ Accept: text/event-stream
 
 ### SSE Authentication & Access Control
 
-This endpoint does not require an `Authorization` header or any form of token authentication. Access control is limited to Origin allowlist validation as defined in **S-13** (see Security Model § Response Headers). Requests from origins not present in the server-configured allowlist SHALL be rejected with `403 Forbidden` and error code `ERR_FORBIDDEN`.
+This endpoint does not require an `Authorization` header or any form of token authentication. Browser-origin abuse mitigation is provided via Origin allowlist validation as defined in **S-13** (see Security Model § Response Headers). Requests from origins not present in the server-configured allowlist SHALL be rejected with `403 Forbidden` and error code `ERR_FORBIDDEN`.
 
 ### Event Schema
 
@@ -426,7 +459,7 @@ The `data:` field is a JSON object matching the `GET /leaderboard` response sche
 
 **RT-02:** On each score change, the server SHALL emit an SSE event with `event: leaderboard_update` and a `data:` field containing the full current top-10 leaderboard as a JSON object matching the `GET /leaderboard` response schema: `{ "leaderboard": [ { "rank", "userId", "displayName", "score" }, ... ] }`. Raw score deltas SHALL NOT be sent — the client always receives the complete current state. *(Ensures clients maintain no partial state: each event is self-contained and sufficient to render the full leaderboard without local diffing.)*
 
-**RT-03:** `GET /leaderboard/stream` SHALL NOT require an `Authorization` header or any form of token authentication — the stream is publicly readable, consistent with `GET /leaderboard`. The server SHALL apply Origin allowlist validation as defined in S-13 (see Security Model § Response Headers). Requests from origins not in the allowlist SHALL be rejected with `403 Forbidden` and error code `ERR_FORBIDDEN`. *(Prevents Cross-Site WebSocket/SSE Hijacking: Origin validation is the sole access control mechanism on the public stream, preventing a malicious third-party page from silently subscribing to live score data.)*
+**RT-03:** `GET /leaderboard/stream` SHALL NOT require an `Authorization` header or any form of token authentication — the stream is publicly readable, consistent with `GET /leaderboard`. The server SHALL apply Origin allowlist validation as defined in S-13 (see Security Model § Response Headers). Requests from origins not in the allowlist SHALL be rejected with `403 Forbidden` and error code `ERR_FORBIDDEN`. *(Origin allowlist validation is browser-origin abuse mitigation for the public stream — it prevents a malicious third-party page from silently subscribing to live score data on behalf of a visiting user. It is not an authentication mechanism.)*
 
 **RT-04:** When a score change occurs (i.e., after a successful `POST /scores`), the server SHALL push a `leaderboard_update` event containing the complete top-10 snapshot to all active SSE clients. Individual score deltas SHALL NOT be broadcast — clients maintain no partial state and require no reconciliation logic. *(Full-snapshot broadcast eliminates client-side state management complexity and ensures every connected client converges to the same view after each update, even if events were missed.)*
 
@@ -453,14 +486,21 @@ The following sequence diagram shows the complete lifecycle of a score submissio
 sequenceDiagram
     participant Client
     participant API as API Server
+    participant DB as PostgreSQL
     participant Redis
     participant SSE as SSE Clients
 
     Client->>API: POST /scores<br/>{event_id, action_type}<br/>Authorization: Bearer <JWT>
-    API->>API: Validate JWT (S-01–S-04)<br/>alg=HS256, claims: sub/exp/iat/iss/aud
+    API->>API: Validate JWT (S-01–S-04)<br/>alg=HS256, claims: sub/exp/iat/nbf/iss/aud
 
     alt JWT invalid or expired
         API-->>Client: 401 Unauthorized<br/>ERR_UNAUTHORIZED
+    end
+
+    API->>API: Check per-user rate limit (S-09)
+
+    alt Rate limit exceeded
+        API-->>Client: 429 Too Many Requests<br/>ERR_RATE_LIMITED
     end
 
     API->>Redis: SET event_id NX EX 900<br/>(atomic nonce check-and-store)
@@ -471,6 +511,8 @@ sequenceDiagram
     end
 
     Redis-->>API: 1 (nonce stored)
+    API->>DB: INSERT score_event (event_id, user_id, action_type, delta)<br/>ON CONFLICT DO NOTHING
+    DB-->>API: ok
     API->>Redis: ZINCRBY leaderboard <delta> <userId>
     Redis-->>API: newScore
     API->>Redis: ZREVRANGE leaderboard 0 9 WITHSCORES
@@ -487,7 +529,7 @@ The following are non-normative enhancement ideas for post-v1 consideration. Non
 
 ### Security Enhancements
 
-- **Token expiry on long-lived SSE connections:** The SSE stream does not re-validate the client's JWT after connection establishment. For long-lived connections, the server should track the JWT `exp` claim at connect time and close the SSE stream when the token would have expired, requiring the client to reconnect with a fresh token if authentication is ever added to the stream.
+- **SSE connection lifetime policy:** The SSE stream is currently unauthenticated. For deployments where live score data should be restricted to active sessions, a future version could require a short-lived signed token (e.g., a query-string token issued by the API after successful login) and close the stream when that token expires, forcing reconnection with a fresh token.
 - **Rate limiting enhancements:** Add per-IP rate limiting as a secondary control to complement per-user rate limiting (S-09). This limits damage from credential-stuffing attacks where many tokens are obtained by different means.
 - **HMAC key rotation policy:** Define a scheduled key rotation policy for the HS256 signing secret. Implement a grace period during which both the old and new keys are accepted, then revoke the old key. Document the rotation procedure in an operations runbook.
 - **Audit logging for rejections:** Log every rejected score submission with: userId (from JWT sub), event_id, rejection reason (ERR_* code), client IP (hashed for privacy), and timestamp. This audit trail enables post-incident analysis and anomaly detection.

@@ -2,7 +2,7 @@
 
 Delivers real-time leaderboard updates over Server-Sent Events (SSE). This endpoint is publicly readable — no authentication is required to establish a connection, consistent with `GET /leaderboard`. The server pushes the full current top-10 snapshot to all connected clients whenever a score change occurs.
 
-**Non-goals:** This section does not specify SSE reconnect behavior, heartbeat keepalive interval, or `Last-Event-ID` handling. Those concerns are deferred and are not SHALL requirements for v1.
+**Non-goals:** This section does not specify SSE reconnect behavior, heartbeat keepalive interval, or `Last-Event-ID` handling. Those concerns are out of scope for v1.
 
 ### Request
 
@@ -20,7 +20,7 @@ Accept: text/event-stream
 
 ### SSE Authentication & Access Control
 
-This endpoint does not require an `Authorization` header or any form of token authentication. Access control is limited to Origin allowlist validation as defined in **S-13** (see Security Model § Response Headers). Requests from origins not present in the server-configured allowlist SHALL be rejected with `403 Forbidden` and error code `ERR_FORBIDDEN`.
+This endpoint does not require an `Authorization` header or any form of token authentication. Browser-origin abuse mitigation is provided via Origin allowlist validation as defined in **S-13** (see Security Model § Response Headers). Requests from origins not present in the server-configured allowlist SHALL be rejected with `403 Forbidden` and error code `ERR_FORBIDDEN`.
 
 ### Event Schema
 
@@ -52,7 +52,7 @@ The `data:` field is a JSON object matching the `GET /leaderboard` response sche
 
 **RT-02:** On each score change, the server SHALL emit an SSE event with `event: leaderboard_update` and a `data:` field containing the full current top-10 leaderboard as a JSON object matching the `GET /leaderboard` response schema: `{ "leaderboard": [ { "rank", "userId", "displayName", "score" }, ... ] }`. Raw score deltas SHALL NOT be sent — the client always receives the complete current state. *(Ensures clients maintain no partial state: each event is self-contained and sufficient to render the full leaderboard without local diffing.)*
 
-**RT-03:** `GET /leaderboard/stream` SHALL NOT require an `Authorization` header or any form of token authentication — the stream is publicly readable, consistent with `GET /leaderboard`. The server SHALL apply Origin allowlist validation as defined in S-13 (see Security Model § Response Headers). Requests from origins not in the allowlist SHALL be rejected with `403 Forbidden` and error code `ERR_FORBIDDEN`. *(Prevents Cross-Site WebSocket/SSE Hijacking: Origin validation is the sole access control mechanism on the public stream, preventing a malicious third-party page from silently subscribing to live score data.)*
+**RT-03:** `GET /leaderboard/stream` SHALL NOT require an `Authorization` header or any form of token authentication — the stream is publicly readable, consistent with `GET /leaderboard`. The server SHALL apply Origin allowlist validation as defined in S-13 (see Security Model § Response Headers). Requests from origins not in the allowlist SHALL be rejected with `403 Forbidden` and error code `ERR_FORBIDDEN`. *(Origin allowlist validation is browser-origin abuse mitigation for the public stream — it prevents a malicious third-party page from silently subscribing to live score data on behalf of a visiting user. It is not an authentication mechanism.)*
 
 **RT-04:** When a score change occurs (i.e., after a successful `POST /scores`), the server SHALL push a `leaderboard_update` event containing the complete top-10 snapshot to all active SSE clients. Individual score deltas SHALL NOT be broadcast — clients maintain no partial state and require no reconciliation logic. *(Full-snapshot broadcast eliminates client-side state management complexity and ensures every connected client converges to the same view after each update, even if events were missed.)*
 
