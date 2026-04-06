@@ -38,11 +38,13 @@ export function UserDetailPanel({ userId, onClose }: UserDetailPanelProps) {
     enabled: !!userId,
   });
 
-  const { data: tasks, isLoading: tasksLoading } = useQuery({
+  const { data: tasksResult, isLoading: tasksLoading } = useQuery({
     queryKey: ['tasks', 'user', userId],
-    queryFn: () => api.tasks.list({ assigneeId: userId! }),
+    queryFn: () => api.tasks.list({ assigneeId: userId!, limit: 1000 }),
     enabled: !!userId,
   });
+
+  const tasks = tasksResult?.data;
 
   const { data: leaderboard } = useQuery({
     queryKey: ['leaderboard'],

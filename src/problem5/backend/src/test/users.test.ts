@@ -3,7 +3,22 @@ import request from 'supertest';
 import { app } from '../app.js';
 import { prisma } from '../lib/prisma.js';
 
+vi.mock('../lib/redis', () => ({
+  redisClient: {
+    get: vi.fn(),
+    set: vi.fn(),
+    del: vi.fn(),
+  },
+}));
+
+vi.mock('../lib/sse-manager', () => ({
+  sseManager: { broadcast: vi.fn() },
+}));
+
+import { redisClient } from '../lib/redis.js';
+
 const mockPrisma = prisma as any;
+const mockRedis = redisClient as any;
 
 const sampleUser = {
   id: 'user-1',
@@ -16,26 +31,33 @@ const sampleUser = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockPrisma.user.count.mockResolvedValue(0);
+  mockRedis.del.mockResolvedValue(1);
+  mockRedis.get.mockResolvedValue(null);
 });
 
 describe('GET /api/users', () => {
-  it('returns list of users', async () => {
+  it('returns paginated list of users', async () => {
+    mockPrisma.user.count.mockResolvedValue(1);
     mockPrisma.user.findMany.mockResolvedValue([sampleUser]);
 
     const res = await request(app).get('/api/users');
 
     expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].name).toBe('Alice Smith');
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].name).toBe('Alice Smith');
+    expect(res.body.total).toBe(1);
   });
 
-  it('returns empty array when no users', async () => {
+  it('returns empty data array when no users', async () => {
+    mockPrisma.user.count.mockResolvedValue(0);
     mockPrisma.user.findMany.mockResolvedValue([]);
 
     const res = await request(app).get('/api/users');
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
+    expect(res.body.data).toEqual([]);
+    expect(res.body.total).toBe(0);
   });
 });
 
@@ -126,13 +148,28 @@ describe('PUT /api/users/:id', () => {
 
     expect(res.status).toBe(404);
   });
+
+  it('returns 400 when body is empty', async () => {
+    const res = await request(app)
+      .put('/api/users/user-1')
+      .send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
 });
 
 describe('DELETE /api/users/:id', () => {
   it('deletes user and returns 204', async () => {
     mockPrisma.user.findUnique.mockResolvedValue(sampleUser);
+    // No active tasks
     mockPrisma.task.count.mockResolvedValue(0);
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
+    mockPrisma.task.updateMany.mockResolvedValue({});
     mockPrisma.user.delete.mockResolvedValue(sampleUser);
+    // leaderboardService.getRankings() is called after delete (Bug #11 fix)
+    mockPrisma.user.findMany.mockResolvedValue([]);
+    mockRedis.set.mockResolvedValue('OK');
 
     const res = await request(app).delete('/api/users/user-1');
 
@@ -147,7 +184,7 @@ describe('DELETE /api/users/:id', () => {
     expect(res.status).toBe(404);
   });
 
-  it('returns 409 when user has tasks', async () => {
+  it('returns 409 when user has active tasks', async () => {
     mockPrisma.user.findUnique.mockResolvedValue(sampleUser);
     mockPrisma.task.count.mockResolvedValue(3);
 

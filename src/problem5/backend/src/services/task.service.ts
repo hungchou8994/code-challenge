@@ -3,20 +3,13 @@ import { NotFoundError, ConflictError } from '../middleware/error-handler.js';
 import { leaderboardService, LEADERBOARD_CACHE_KEY } from './leaderboard.service.js';
 import { redisClient } from '../lib/redis.js';
 import { sseManager } from '../lib/sse-manager.js';
-import type { CreateTaskBody, UpdateTaskBody } from '../schemas/task.schemas.js';
+import type { CreateTaskBody, UpdateTaskBody, TaskQueryParams } from '../schemas/task.schemas.js';
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   TODO: ['IN_PROGRESS'],
   IN_PROGRESS: ['DONE'],
   DONE: [],
 };
-
-interface TaskQueryParams {
-  status?: string;
-  assigneeId?: string;
-  sortBy?: string;
-  sortOrder?: 'asc' | 'desc';
-}
 
 export const taskService = {
   async getAll(query: TaskQueryParams) {
@@ -43,11 +36,20 @@ export const taskService = {
       }
     }
 
-    const tasks = await prisma.task.findMany({
-      where,
-      orderBy,
-      include: { assignee: { select: { id: true, name: true, email: true } } },
-    });
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const skip = (page - 1) * limit;
+
+    const [total, tasks] = await Promise.all([
+      prisma.task.count({ where }),
+      prisma.task.findMany({
+        where,
+        orderBy,
+        skip,
+        take: limit,
+        include: { assignee: { select: { id: true, name: true, email: true } } },
+      }),
+    ]);
 
     if (query.sortBy === 'priority') {
       const priorityOrder: Record<string, number> = { HIGH: 3, MEDIUM: 2, LOW: 1 };
@@ -55,7 +57,13 @@ export const taskService = {
       tasks.sort((a, b) => ((priorityOrder[a.priority] || 0) - (priorityOrder[b.priority] || 0)) * sortDir);
     }
 
-    return tasks;
+    return {
+      data: tasks,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   },
 
   async getById(id: string) {
@@ -109,6 +117,12 @@ export const taskService = {
       }
     }
 
+    // Validate that the new assigneeId (if provided) refers to an existing user
+    if (data.assigneeId != null) {
+      const assignee = await prisma.user.findUnique({ where: { id: data.assigneeId } });
+      if (!assignee) throw new NotFoundError('User', data.assigneeId);
+    }
+
     const updateData: any = {};
     if (data.title !== undefined) updateData.title = data.title;
     if (data.description !== undefined) updateData.description = data.description;
@@ -117,11 +131,33 @@ export const taskService = {
     if (data.assigneeId !== undefined) updateData.assigneeId = data.assigneeId;
     if (data.dueDate !== undefined) updateData.dueDate = new Date(data.dueDate);
 
-    const updated = await prisma.task.update({
-      where: { id },
-      data: updateData,
-      include: { assignee: { select: { id: true, name: true, email: true } } },
-    });
+    let updated: any;
+
+    if (data.status && data.status !== existing.status) {
+      // Use a conditional updateMany to prevent double-scoring when two concurrent
+      // requests both try to transition the same task (e.g. both mark IN_PROGRESS → DONE).
+      // The WHERE { status: existing.status } guard means only the first writer wins.
+      const result = await prisma.task.updateMany({
+        where: { id, status: existing.status },
+        data: updateData,
+      });
+      if (result.count === 0) {
+        throw new ConflictError(
+          'CONCURRENT_MODIFICATION',
+          'Task was modified by a concurrent request. Please refresh and retry.'
+        );
+      }
+      updated = await prisma.task.findUnique({
+        where: { id },
+        include: { assignee: { select: { id: true, name: true, email: true } } },
+      });
+    } else {
+      updated = await prisma.task.update({
+        where: { id },
+        data: updateData,
+        include: { assignee: { select: { id: true, name: true, email: true } } },
+      });
+    }
 
     if (data.status === 'DONE' && existing.status !== 'DONE' && updated.assigneeId) {
       await leaderboardService.scoreTask({
@@ -138,36 +174,63 @@ export const taskService = {
     return updated;
   },
 
-  async delete(id: string) {
+  async delete(id: string, force = false) {
     const task = await taskService.getById(id);
 
-    const affectedUserId = task.status === 'DONE' ? task.assigneeId : null;
+    if (task.status === 'DONE' && !force) {
+      throw new ConflictError(
+        'TASK_COMPLETED',
+        'Cannot delete a completed task. Completed tasks are part of the score history. Use force=true to override.'
+      );
+    }
+
+    if (task.status === 'DONE' && force) {
+      await prisma.$transaction(async (tx) => {
+        // 1. Find the ScoreEvent to determine which user was actually scored
+        //    (task may have been reassigned after completion, so task.assigneeId may differ)
+        const scoreEvent = await tx.scoreEvent.findFirst({ where: { taskId: id } });
+        const scoredUserId = scoreEvent?.userId ?? null;
+
+        // 2. Delete the ScoreEvent for this task
+        await tx.scoreEvent.deleteMany({ where: { taskId: id } });
+
+        // 3. Delete the task itself
+        await tx.task.delete({ where: { id } });
+
+        // 4. Recalculate ProductivityScore from remaining ScoreEvents (source of truth)
+        if (scoredUserId) {
+          const agg = await tx.scoreEvent.aggregate({
+            where: { userId: scoredUserId },
+            _sum: { totalAwarded: true },
+            _count: { id: true },
+          });
+
+          const newTotal = agg._sum.totalAwarded ?? 0;
+          const newCount = agg._count.id ?? 0;
+
+          await tx.productivityScore.upsert({
+            where: { userId: scoredUserId },
+            create: {
+              userId: scoredUserId,
+              totalScore: newTotal,
+              tasksCompleted: newCount,
+            },
+            update: {
+              totalScore: newTotal,
+              tasksCompleted: newCount,
+            },
+          });
+        }
+      });
+
+      // 4. Invalidate leaderboard cache and broadcast fresh rankings
+      try { await redisClient.del(LEADERBOARD_CACHE_KEY); } catch {}
+      const updatedRankings = await leaderboardService.getRankings();
+      sseManager.broadcast(updatedRankings);
+
+      return;
+    }
 
     await prisma.task.delete({ where: { id } });
-
-    if (affectedUserId) {
-      const agg = await prisma.scoreEvent.aggregate({
-        where: { userId: affectedUserId },
-        _sum: { totalAwarded: true },
-        _count: { id: true },
-      });
-
-      const newTotal = agg._sum.totalAwarded ?? 0;
-      const newCount = agg._count.id ?? 0;
-
-      await prisma.productivityScore.upsert({
-        where: { userId: affectedUserId },
-        create: {
-          userId: affectedUserId,
-          totalScore: newTotal,
-          tasksCompleted: newCount,
-        },
-        update: {
-          totalScore: newTotal,
-          tasksCompleted: newCount,
-        },
-      });
-      try { await redisClient.del(LEADERBOARD_CACHE_KEY); } catch {}
-    }
   },
 };

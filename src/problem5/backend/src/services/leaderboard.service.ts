@@ -22,30 +22,32 @@ export const leaderboardService = {
 
     const bonus = isEarly ? EARLY_BONUS : 0;
     const penalty = isLate ? Math.abs(LATE_PENALTY) : 0;
-    const totalAwarded = basePoints + (isEarly ? EARLY_BONUS : 0) + (isLate ? LATE_PENALTY : 0);
+    const totalAwarded = basePoints + bonus - penalty;
 
-    await prisma.scoreEvent.create({
-      data: {
-        userId: task.assigneeId,
-        taskId: task.id,
-        points: basePoints,
-        bonus,
-        penalty,
-        totalAwarded,
-      },
-    });
+    await prisma.$transaction(async (tx) => {
+      await tx.scoreEvent.create({
+        data: {
+          userId: task.assigneeId,
+          taskId: task.id,
+          points: basePoints,
+          bonus,
+          penalty,
+          totalAwarded,
+        },
+      });
 
-    await prisma.productivityScore.upsert({
-      where: { userId: task.assigneeId },
-      create: {
-        userId: task.assigneeId,
-        totalScore: totalAwarded,
-        tasksCompleted: 1,
-      },
-      update: {
-        totalScore: { increment: totalAwarded },
-        tasksCompleted: { increment: 1 },
-      },
+      await tx.productivityScore.upsert({
+        where: { userId: task.assigneeId },
+        create: {
+          userId: task.assigneeId,
+          totalScore: totalAwarded,
+          tasksCompleted: 1,
+        },
+        update: {
+          totalScore: { increment: totalAwarded },
+          tasksCompleted: { increment: 1 },
+        },
+      });
     });
   },
 

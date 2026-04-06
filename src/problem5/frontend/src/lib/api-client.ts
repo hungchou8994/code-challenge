@@ -4,6 +4,14 @@ import type { LeaderboardEntry } from 'shared/types/leaderboard';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
 export interface DashboardStats {
   totalTasks: number;
   completedTasks: number;
@@ -29,8 +37,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   users: {
-    list: (): Promise<User[]> =>
-      request('/api/users'),
+    list: (params?: {
+      search?: string;
+      department?: string;
+      page?: number;
+      limit?: number;
+    }): Promise<PaginatedResponse<User>> => {
+      const qs = params
+        ? '?' + new URLSearchParams(
+            Object.entries(params)
+              .filter(([, v]) => v !== undefined)
+              .map(([k, v]) => [k, String(v)])
+          ).toString()
+        : '';
+      return request(`/api/users${qs}`);
+    },
+
+    listAll: (): Promise<PaginatedResponse<User>> =>
+      request('/api/users?limit=1000'),
 
     get: (id: string): Promise<User> =>
       request(`/api/users/${id}`),
@@ -57,10 +81,14 @@ export const api = {
       assigneeId?: string;
       sortBy?: string;
       sortOrder?: 'asc' | 'desc';
-    }): Promise<Task[]> => {
+      page?: number;
+      limit?: number;
+    }): Promise<PaginatedResponse<Task>> => {
       const qs = params
         ? '?' + new URLSearchParams(
-            Object.entries(params).filter(([, v]) => v !== undefined) as [string, string][]
+            Object.entries(params)
+              .filter(([, v]) => v !== undefined)
+              .map(([k, v]) => [k, String(v)])
           ).toString()
         : '';
       return request(`/api/tasks${qs}`);
@@ -83,6 +111,9 @@ export const api = {
 
     delete: (id: string): Promise<void> =>
       request(`/api/tasks/${id}`, { method: 'DELETE' }),
+
+    forceDelete: (id: string): Promise<void> =>
+      request(`/api/tasks/${id}?force=true`, { method: 'DELETE' }),
   },
 
   leaderboard: {
@@ -92,39 +123,26 @@ export const api = {
 
   dashboard: {
     getStats: async (): Promise<DashboardStats> => {
-      const [tasks, leaderboard] = await Promise.all([
-        api.tasks.list(),
+      const [totalResult, completedResult, leaderboard] = await Promise.all([
+        api.tasks.list({ limit: 1 }),
+        api.tasks.list({ status: 'DONE', limit: 1 }),
         api.leaderboard.get(),
       ]);
 
-      const completedTasks = tasks.filter(t => t.status === 'DONE').length;
-
-      const taskCountMap = new Map<string, { userName: string; count: number }>();
-      for (const task of tasks) {
-        if (task.assigneeId && task.assignee) {
-          const existing = taskCountMap.get(task.assigneeId);
-          if (existing) {
-            existing.count += 1;
-          } else {
-            taskCountMap.set(task.assigneeId, {
-              userName: task.assignee.name,
-              count: 1,
-            });
-          }
-        }
-      }
-
-      const tasksByUser = Array.from(taskCountMap.entries()).map(([userId, data]) => ({
-        userId,
-        userName: data.userName,
-        taskCount: data.count,
-      }));
+      // Derive per-member task counts from leaderboard (completed tasks)
+      const tasksByUser = leaderboard
+        .filter(e => e.tasksCompleted > 0)
+        .map(e => ({
+          userId: e.userId,
+          userName: e.userName,
+          taskCount: e.tasksCompleted,
+        }));
 
       const topPerformers = leaderboard.slice(0, 5);
 
       return {
-        totalTasks: tasks.length,
-        completedTasks,
+        totalTasks: totalResult.total,
+        completedTasks: completedResult.total,
         tasksByUser,
         topPerformers,
       };

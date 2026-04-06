@@ -38,37 +38,37 @@ describe('GET /api/health', () => {
     expect(typeof res.body.uptime).toBe('number');
   });
 
-  it('returns 200 with status degraded when redis is down', async () => {
+  it('returns 503 with status degraded when redis is down', async () => {
     mockPrisma.$queryRaw.mockResolvedValue([{ 1: 1 }]);
     mockRedis.ping.mockRejectedValue(new Error('Redis connection refused'));
 
     const res = await request(app).get('/api/health');
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(503);
     expect(res.body.status).toBe('degraded');
     expect(res.body.checks.database).toBe('ok');
     expect(res.body.checks.redis).toBe('error');
   });
 
-  it('returns 200 with status degraded when database is down', async () => {
+  it('returns 503 with status degraded when database is down', async () => {
     mockPrisma.$queryRaw.mockRejectedValue(new Error('DB connection failed'));
     mockRedis.ping.mockResolvedValue('PONG');
 
     const res = await request(app).get('/api/health');
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(503);
     expect(res.body.status).toBe('degraded');
     expect(res.body.checks.database).toBe('error');
     expect(res.body.checks.redis).toBe('ok');
   });
 
-  it('returns 200 with status degraded when both are down', async () => {
+  it('returns 503 with status degraded when both are down', async () => {
     mockPrisma.$queryRaw.mockRejectedValue(new Error('DB connection failed'));
     mockRedis.ping.mockRejectedValue(new Error('Redis connection refused'));
 
     const res = await request(app).get('/api/health');
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(503);
     expect(res.body.status).toBe('degraded');
     expect(res.body.checks.database).toBe('error');
     expect(res.body.checks.redis).toBe('error');

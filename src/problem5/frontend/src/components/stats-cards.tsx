@@ -110,7 +110,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
   const values: Record<string, { main: string; sub?: string }> = {
     totalTasks: { main: String(stats.totalTasks) },
     completedTasks: { main: String(stats.completedTasks), sub: `${completionRate}% completion rate` },
-    activeMembers: { main: String(stats.tasksByUser.length), sub: 'with assigned tasks' },
+    activeMembers: { main: String(stats.tasksByUser.length), sub: 'completed tasks' },
     topScore: {
       main: `${stats.topPerformers[0]?.totalScore ?? 0} pts`,
       sub: stats.topPerformers[0]?.userName,

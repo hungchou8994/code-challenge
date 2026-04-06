@@ -2,13 +2,20 @@ import { Router } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import { userService } from '../services/user.service.js';
 import { validate } from '../middleware/validation.js';
-import { createUserSchema, updateUserSchema } from '../schemas/user.schemas.js';
+import { createUserSchema, updateUserSchema, userQuerySchema } from '../schemas/user.schemas.js';
 
 const router = Router();
 
-router.get('/', async (_req, res) => {
-  const users = await userService.getAll();
-  res.json(users);
+router.get('/', async (req, res) => {
+  const parsed = userQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(StatusCodes.BAD_REQUEST).json({
+      error: { code: 'VALIDATION_ERROR', message: parsed.error.errors[0]?.message ?? 'Invalid query parameters' },
+    });
+    return;
+  }
+  const result = await userService.getAll(parsed.data);
+  res.json(result);
 });
 
 router.get('/:id', async (req, res) => {

@@ -15,9 +15,10 @@ router.get('/', async (_req, res) => {
     redis: redisResult.status === 'fulfilled' ? 'ok' : 'error',
   } as const;
 
-  const status = checks.database === 'ok' && checks.redis === 'ok' ? 'ok' : 'degraded';
+  const isHealthy = checks.database === 'ok' && checks.redis === 'ok';
+  const status = isHealthy ? 'ok' : 'degraded';
 
-  res.status(200).json({
+  res.status(isHealthy ? 200 : 503).json({
     status,
     checks,
     uptime: process.uptime(),

@@ -1,9 +1,15 @@
 'use client';
 
+import { useState } from 'react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger,
 } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from '@/components/ui/command';
 import { Button } from '@/components/ui/button';
+import { Check, ChevronsUpDown } from 'lucide-react';
 import type { User } from 'shared/types/user';
 
 interface FilterBarProps {
@@ -21,6 +27,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export function FilterBar({ status, assigneeId, users, onChange }: FilterBarProps) {
+  const [open, setOpen] = useState(false);
   const currentAssignee = users.find(u => u.id === assigneeId);
 
   return (
@@ -40,20 +47,50 @@ export function FilterBar({ status, assigneeId, users, onChange }: FilterBarProp
         </SelectContent>
       </Select>
 
-      <Select
-        value={assigneeId || 'all'}
-        onValueChange={(v) => onChange({ status, assigneeId: !v || v === 'all' ? '' : v })}
-      >
-        <SelectTrigger className="w-40">
-          <span>{currentAssignee ? currentAssignee.name : 'All assignees'}</span>
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All assignees</SelectItem>
-          {users.map((u) => (
-            <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          className="inline-flex h-9 w-44 items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm hover:bg-accent hover:text-accent-foreground focus:outline-none"
+          aria-expanded={open}
+        >
+          <span className="truncate">
+            {currentAssignee ? currentAssignee.name : 'All assignees'}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </PopoverTrigger>
+        <PopoverContent className="w-52 p-0" side="bottom" align="start">
+          <Command>
+            <CommandInput placeholder="Search assignee..." />
+            <CommandList>
+              <CommandEmpty>No assignee found.</CommandEmpty>
+              <CommandGroup>
+                <CommandItem
+                  value="all"
+                  onSelect={() => {
+                    onChange({ status, assigneeId: '' });
+                    setOpen(false);
+                  }}
+                >
+                  <Check className={`mr-2 h-4 w-4 ${!assigneeId ? 'opacity-100' : 'opacity-0'}`} />
+                  All assignees
+                </CommandItem>
+                {users.map((u) => (
+                  <CommandItem
+                    key={u.id}
+                    value={u.name}
+                    onSelect={() => {
+                      onChange({ status, assigneeId: u.id === assigneeId ? '' : u.id });
+                      setOpen(false);
+                    }}
+                  >
+                    <Check className={`mr-2 h-4 w-4 ${assigneeId === u.id ? 'opacity-100' : 'opacity-0'}`} />
+                    {u.name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
 
       {(status || assigneeId) && (
         <Button

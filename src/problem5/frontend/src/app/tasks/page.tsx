@@ -45,7 +45,7 @@ const CARD_BORDER: Record<string, string> = {
   DONE: 'border-emerald-200 shadow-[0_4px_0_0_rgba(52,211,153,0.25)]',
 };
 
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 10;
 
 export default function TasksPage() {
   const queryClient = useQueryClient();
@@ -57,22 +57,25 @@ export default function TasksPage() {
     setPage(1);
   };
 
-  const { data: tasks = [], isLoading } = useQuery({
-    queryKey: ['tasks', filters],
+  const { data: tasksResult, isLoading } = useQuery({
+    queryKey: ['tasks', filters, page],
     queryFn: () => api.tasks.list({
       status: filters.status || undefined,
       assigneeId: filters.assigneeId || undefined,
+      page,
+      limit: PAGE_SIZE,
     }),
   });
 
-  const { data: users = [] } = useQuery({
-    queryKey: ['users'],
-    queryFn: api.users.list,
-  });
+  const tasks = tasksResult?.data ?? [];
+  const total = tasksResult?.total ?? 0;
+  const totalPages = tasksResult?.totalPages ?? 1;
 
-  const totalPages = Math.max(1, Math.ceil(tasks.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const paginated = tasks.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const { data: usersResult } = useQuery({
+    queryKey: ['users', 'all'],
+    queryFn: () => api.users.listAll(),
+  });
+  const users = usersResult?.data ?? [];
 
   const createMutation = useMutation({
     mutationFn: api.tasks.create,
@@ -97,9 +100,19 @@ export default function TasksPage() {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
       queryClient.invalidateQueries({ queryKey: ['leaderboard'] });
       toast.success('Task deleted');
-      const remaining = tasks.length - 1;
-      const newTotalPages = Math.max(1, Math.ceil(remaining / PAGE_SIZE));
-      if (safePage > newTotalPages) setPage(newTotalPages);
+      // Go back a page if we deleted the last item on this page
+      if (tasks.length === 1 && page > 1) setPage(page - 1);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const forceDeleteMutation = useMutation({
+    mutationFn: api.tasks.forceDelete,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['leaderboard'] });
+      toast.success('Completed task deleted and score recalculated');
+      if (tasks.length === 1 && page > 1) setPage(page - 1);
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -113,6 +126,12 @@ export default function TasksPage() {
   const handleDelete = (task: Task) => {
     if (confirm(`Delete "${task.title}"? This cannot be undone.`)) {
       deleteMutation.mutate(task.id);
+    }
+  };
+
+  const handleForceDelete = (task: Task) => {
+    if (confirm(`Delete completed task "${task.title}"?\n\nWarning: This will permanently remove the task and roll back the score awarded to ${task.assignee?.name ?? 'the assignee'}. This cannot be undone.`)) {
+      forceDeleteMutation.mutate(task.id);
     }
   };
 
@@ -148,7 +167,7 @@ export default function TasksPage() {
 
       {isLoading ? (
         <p className="text-gray-400 font-semibold">Loading...</p>
-      ) : tasks.length === 0 ? (
+      ) : total === 0 ? (
         <div className="rounded-xl bg-white border-b-4 border-gray-200 shadow-[0_4px_0_0_rgba(0,0,0,0.06)] p-12 text-center">
           <p className="text-gray-400 font-semibold">
             {filters.status || filters.assigneeId ? 'No tasks match the current filters.' : 'No tasks yet. Create one to get started.'}
@@ -156,7 +175,7 @@ export default function TasksPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {paginated.map((task) => (
+          {tasks.map((task) => (
 
             <div
               key={task.id}
@@ -213,19 +232,33 @@ export default function TasksPage() {
                   }
                   onSubmit={(data) => updateMutation.mutateAsync({ id: task.id, data: data as Parameters<typeof api.tasks.update>[1] })}
                 />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 rounded-xl hover:bg-red-100 hover:text-red-500"
-                  onClick={() => handleDelete(task)}
-                  disabled={deleteMutation.isPending}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                {task.status !== 'DONE' && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 rounded-xl hover:bg-red-100 hover:text-red-500"
+                    onClick={() => handleDelete(task)}
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+                {task.status === 'DONE' && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 rounded-xl hover:bg-red-100 hover:text-red-500 opacity-40 hover:opacity-100"
+                    onClick={() => handleForceDelete(task)}
+                    disabled={forceDeleteMutation.isPending}
+                    title="Delete completed task (will roll back score)"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </div>
           ))}
-          {Array.from({ length: PAGE_SIZE - paginated.length }).map((_, i) => (
+          {Array.from({ length: PAGE_SIZE - tasks.length }).map((_, i) => (
             <div key={`empty-${i}`} className="rounded-xl bg-white border-b-4 border-transparent p-5 flex items-center gap-4 opacity-0 pointer-events-none select-none" aria-hidden="true">
               <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-gray-300" />
               <div className="flex-1 min-w-0">
@@ -248,12 +281,12 @@ export default function TasksPage() {
         </div>
       )}
 
-      {!isLoading && tasks.length > 0 && totalPages > 1 && (
+      {!isLoading && total > 0 && totalPages > 1 && (
         <PaginationBar
-          page={safePage - 1}
+          page={page - 1}
           totalPages={totalPages}
           onPageChange={(p) => setPage(p + 1)}
-          totalItems={tasks.length}
+          totalItems={total}
           pageSize={PAGE_SIZE}
           itemLabel="tasks"
           accentClass="bg-orange-400 hover:bg-orange-500"

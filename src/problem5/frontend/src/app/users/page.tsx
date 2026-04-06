@@ -3,9 +3,10 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Users, Search } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Search, Check, ChevronsUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { UserForm } from '@/components/user-form';
 import { UserDetailPanel } from '@/components/user-detail-panel';
 import { PaginationBar } from '@/components/pagination-bar';
@@ -19,25 +20,36 @@ export default function UsersPage() {
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState('');
   const [department, setDepartment] = useState('');
+  const [deptOpen, setDeptOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
-  const { data: users = [], isLoading } = useQuery({
-    queryKey: ['users'],
-    queryFn: api.users.list,
+  // Unfiltered fetch used only to populate the department dropdown
+  const { data: allUsersData } = useQuery({
+    queryKey: ['users', 'all'],
+    queryFn: () => api.users.listAll(),
+    staleTime: 5 * 60 * 1000,
   });
 
   const departments = useMemo(() => {
-    const set = new Set(users.map((u) => u.department).filter(Boolean));
+    const allUsers = allUsersData?.data ?? [];
+    const set = new Set(allUsers.map((u) => u.department).filter(Boolean));
     return Array.from(set).sort() as string[];
-  }, [users]);
+  }, [allUsersData]);
 
-  const filtered = useMemo(() => {
-    return users.filter((u) => {
-      const matchName = !search || u.name.toLowerCase().includes(search.toLowerCase());
-      const matchDept = !department || u.department === department;
-      return matchName && matchDept;
-    });
-  }, [users, search, department]);
+  // Server-side paginated + filtered query
+  const { data: usersResult, isLoading } = useQuery({
+    queryKey: ['users', 'list', page, search, department],
+    queryFn: () => api.users.list({
+      search: search || undefined,
+      department: department || undefined,
+      page: page + 1,
+      limit: PAGE_SIZE,
+    }),
+  });
+
+  const users = usersResult?.data ?? [];
+  const totalPages = usersResult?.totalPages ?? 0;
+  const totalItems = usersResult?.total ?? 0;
 
   const handleFilterChange = () => setPage(0);
 
@@ -56,7 +68,11 @@ export default function UsersPage() {
 
   const deleteMutation = useMutation({
     mutationFn: api.users.delete,
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['users'] }); toast.success('User deleted'); },
+    onSuccess: () => {
+      if (users.length === 1 && page > 0) setPage(page - 1);
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('User deleted');
+    },
     onError: (err: Error) => toast.error(err.message),
   });
 
@@ -65,10 +81,6 @@ export default function UsersPage() {
       deleteMutation.mutate(user.id);
     }
   };
-
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const safePage = Math.min(page, Math.max(0, totalPages - 1));
-  const pageUsers = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
 
   return (
     <div className="space-y-6">
@@ -103,20 +115,42 @@ export default function UsersPage() {
             className="w-full pl-9 pr-4 py-2 h-9 rounded-xl border border-input bg-background text-sm font-semibold text-gray-700 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
-        <Select
-          value={department || 'all'}
-          onValueChange={(v) => { setDepartment(v === 'all' ? '' : (v ?? '')); handleFilterChange(); }}
-        >
-          <SelectTrigger className="w-44">
-            <span>{department || 'All departments'}</span>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All departments</SelectItem>
-            {departments.map((d) => (
-              <SelectItem key={d} value={d}>{d}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Popover open={deptOpen} onOpenChange={setDeptOpen}>
+          <PopoverTrigger
+            className="inline-flex h-9 w-44 items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm hover:bg-accent hover:text-accent-foreground focus:outline-none"
+            aria-expanded={deptOpen}
+          >
+            <span className="truncate">{department || 'All departments'}</span>
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </PopoverTrigger>
+          <PopoverContent className="w-52 p-0" side="bottom" align="start">
+            <Command>
+              <CommandInput placeholder="Search department..." />
+              <CommandList>
+                <CommandEmpty>No department found.</CommandEmpty>
+                <CommandGroup>
+                  <CommandItem
+                    value="all"
+                    onSelect={() => { setDepartment(''); handleFilterChange(); setDeptOpen(false); }}
+                  >
+                    <Check className={`mr-2 h-4 w-4 ${!department ? 'opacity-100' : 'opacity-0'}`} />
+                    All departments
+                  </CommandItem>
+                  {departments.map((d) => (
+                    <CommandItem
+                      key={d}
+                      value={d}
+                      onSelect={() => { setDepartment(d === department ? '' : d); handleFilterChange(); setDeptOpen(false); }}
+                    >
+                      <Check className={`mr-2 h-4 w-4 ${department === d ? 'opacity-100' : 'opacity-0'}`} />
+                      {d}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
         {(search || department) && (
           <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setDepartment(''); setPage(0); }}>
             Clear filters
@@ -126,7 +160,7 @@ export default function UsersPage() {
 
       {isLoading ? (
         <p className="text-gray-400 font-semibold">Loading...</p>
-      ) : filtered.length === 0 ? (
+      ) : users.length === 0 ? (
         <div className="rounded-xl bg-white border-b-4 border-gray-200 shadow-[0_4px_0_0_rgba(0,0,0,0.06)] p-12 text-center">
           <p className="text-gray-400 font-semibold">
             {search || department ? 'No members match the current filters.' : 'No team members yet. Add one to get started.'}
@@ -142,7 +176,7 @@ export default function UsersPage() {
           </div>
 
           <div className="divide-y divide-gray-50">
-            {pageUsers.map((user) => (
+            {users.map((user) => (
               <div key={user.id} className="grid grid-cols-[1fr_1.5fr_1fr_80px] gap-4 px-6 py-4 items-center hover:bg-orange-50/40 transition-colors cursor-pointer" onClick={() => setSelectedUserId(user.id)}>
                 <span className="font-bold text-gray-700 text-sm truncate">{user.name}</span>
                 <span className="text-sm text-gray-500 font-semibold truncate">{user.email}</span>
@@ -173,7 +207,7 @@ export default function UsersPage() {
                 </div>
               </div>
             ))}
-            {Array.from({ length: PAGE_SIZE - pageUsers.length }).map((_, i) => (
+            {Array.from({ length: PAGE_SIZE - users.length }).map((_, i) => (
               <div key={`pad-${i}`} className="px-6 py-4 opacity-0 pointer-events-none select-none">
                 <span>&nbsp;</span>
               </div>
@@ -183,10 +217,10 @@ export default function UsersPage() {
           {totalPages > 1 && (
             <div className="px-6 py-3 border-t border-violet-100 bg-violet-50/40">
               <PaginationBar
-                page={safePage}
+                page={page}
                 totalPages={totalPages}
                 onPageChange={setPage}
-                totalItems={filtered.length}
+                totalItems={totalItems}
                 pageSize={PAGE_SIZE}
                 itemLabel="members"
                 accentClass="bg-violet-400 hover:bg-violet-500"

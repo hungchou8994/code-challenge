@@ -48,21 +48,32 @@ const sampleTask = {
 beforeEach(() => {
   vi.clearAllMocks();
   mockPrisma.user.findMany.mockResolvedValue([]);
+  mockPrisma.task.count.mockResolvedValue(0);
   mockRedis.get.mockResolvedValue(null);
 });
 
 describe('GET /api/tasks', () => {
-  it('returns list of tasks', async () => {
+  it('returns paginated list of tasks', async () => {
+    mockPrisma.task.count.mockResolvedValue(1);
     mockPrisma.task.findMany.mockResolvedValue([sampleTask]);
 
     const res = await request(app).get('/api/tasks');
 
     expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].title).toBe('Build feature');
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].title).toBe('Build feature');
+    expect(res.body.total).toBe(1);
+    expect(res.body.page).toBe(1);
+  });
+
+  it('returns 400 for invalid status query param', async () => {
+    const res = await request(app).get('/api/tasks?status=INVALID');
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
   });
 
   it('filters tasks by status', async () => {
+    mockPrisma.task.count.mockResolvedValue(1);
     mockPrisma.task.findMany.mockResolvedValue([sampleTask]);
 
     const res = await request(app).get('/api/tasks?status=TODO');
@@ -76,14 +87,15 @@ describe('GET /api/tasks', () => {
   });
 
   it('filters tasks by assigneeId', async () => {
+    mockPrisma.task.count.mockResolvedValue(1);
     mockPrisma.task.findMany.mockResolvedValue([sampleTask]);
 
-    const res = await request(app).get('/api/tasks?assigneeId=user-1');
+    const res = await request(app).get(`/api/tasks?assigneeId=${sampleTask.assigneeId}`);
 
     expect(res.status).toBe(200);
     expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ assigneeId: 'user-1' }),
+        where: expect.objectContaining({ assigneeId: sampleTask.assigneeId }),
       })
     );
   });
@@ -163,8 +175,10 @@ describe('POST /api/tasks', () => {
 describe('PATCH /api/tasks/:id — status transitions', () => {
   it('allows TODO → IN_PROGRESS transition', async () => {
     const inProgressTask = { ...sampleTask, status: 'IN_PROGRESS' };
-    mockPrisma.task.findUnique.mockResolvedValue(sampleTask);
-    mockPrisma.task.update.mockResolvedValue(inProgressTask);
+    mockPrisma.task.findUnique
+      .mockResolvedValueOnce(sampleTask)       // getById
+      .mockResolvedValueOnce(inProgressTask);  // after updateMany
+    mockPrisma.task.updateMany.mockResolvedValue({ count: 1 });
 
     const res = await request(app)
       .patch('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
@@ -220,11 +234,27 @@ describe('PATCH /api/tasks/:id — status transitions', () => {
     expect(res.body.error.code).toBe('UNASSIGNED_COMPLETION');
   });
 
+  it('returns 409 when task was concurrently modified', async () => {
+    const inProgressTask = { ...sampleTask, status: 'IN_PROGRESS' };
+    mockPrisma.task.findUnique.mockResolvedValue(inProgressTask);
+    mockPrisma.task.updateMany.mockResolvedValue({ count: 0 }); // concurrent write won the race
+
+    const res = await request(app)
+      .patch('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
+      .send({ status: 'DONE' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('CONCURRENT_MODIFICATION');
+  });
+
   it('scores task when transitioning to DONE', async () => {
     const inProgressTask = { ...sampleTask, status: 'IN_PROGRESS' };
     const doneTask = { ...sampleTask, status: 'DONE', assigneeId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' };
-    mockPrisma.task.findUnique.mockResolvedValue(inProgressTask);
-    mockPrisma.task.update.mockResolvedValue(doneTask);
+    mockPrisma.task.findUnique
+      .mockResolvedValueOnce(inProgressTask)  // getById
+      .mockResolvedValueOnce(doneTask);        // after updateMany
+    mockPrisma.task.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
     mockPrisma.scoreEvent.create.mockResolvedValue({});
     mockPrisma.productivityScore.upsert.mockResolvedValue({});
     mockRedis.del.mockResolvedValue(1);
@@ -243,8 +273,11 @@ describe('PATCH /api/tasks/:id — scoring logic', () => {
   it('awards MEDIUM base points (10) for on-time completion', async () => {
     const inProgressTask = { ...sampleTask, status: 'IN_PROGRESS', priority: 'MEDIUM' };
     const doneTask = { ...inProgressTask, status: 'DONE', assigneeId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' };
-    mockPrisma.task.findUnique.mockResolvedValue(inProgressTask);
-    mockPrisma.task.update.mockResolvedValue(doneTask);
+    mockPrisma.task.findUnique
+      .mockResolvedValueOnce(inProgressTask)
+      .mockResolvedValueOnce(doneTask);
+    mockPrisma.task.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
     mockPrisma.scoreEvent.create.mockResolvedValue({});
     mockPrisma.productivityScore.upsert.mockResolvedValue({});
     mockRedis.del.mockResolvedValue(1);
@@ -262,8 +295,11 @@ describe('PATCH /api/tasks/:id — scoring logic', () => {
   it('awards HIGH base points (20) for high priority task', async () => {
     const inProgressHighTask = { ...sampleTask, status: 'IN_PROGRESS', priority: 'HIGH' };
     const doneHighTask = { ...inProgressHighTask, status: 'DONE', assigneeId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' };
-    mockPrisma.task.findUnique.mockResolvedValue(inProgressHighTask);
-    mockPrisma.task.update.mockResolvedValue(doneHighTask);
+    mockPrisma.task.findUnique
+      .mockResolvedValueOnce(inProgressHighTask)
+      .mockResolvedValueOnce(doneHighTask);
+    mockPrisma.task.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
     mockPrisma.scoreEvent.create.mockResolvedValue({});
     mockPrisma.productivityScore.upsert.mockResolvedValue({});
     mockRedis.del.mockResolvedValue(1);
@@ -284,8 +320,11 @@ describe('PATCH /api/tasks/:id — scoring logic', () => {
       dueDate: new Date(pastDueDate),
     };
     const doneLateTask = { ...inProgressLateTask, status: 'DONE', assigneeId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' };
-    mockPrisma.task.findUnique.mockResolvedValue(inProgressLateTask);
-    mockPrisma.task.update.mockResolvedValue(doneLateTask);
+    mockPrisma.task.findUnique
+      .mockResolvedValueOnce(inProgressLateTask)
+      .mockResolvedValueOnce(doneLateTask);
+    mockPrisma.task.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
     mockPrisma.scoreEvent.create.mockResolvedValue({});
     mockPrisma.productivityScore.upsert.mockResolvedValue({});
     mockRedis.del.mockResolvedValue(1);
@@ -299,6 +338,20 @@ describe('PATCH /api/tasks/:id — scoring logic', () => {
     expect(scoreCall.data.bonus).toBe(0);
     expect(scoreCall.data.penalty).toBe(3);
     expect(scoreCall.data.totalAwarded).toBe(7);
+  });
+});
+
+describe('PATCH /api/tasks/:id — assignee validation', () => {
+  it('returns 404 when assigneeId does not exist on update', async () => {
+    mockPrisma.task.findUnique.mockResolvedValue(sampleTask);
+    mockPrisma.user.findUnique.mockResolvedValue(null); // assignee not found
+
+    const res = await request(app)
+      .patch('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
+      .send({ assigneeId: 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22' });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
   });
 });
 
@@ -319,6 +372,16 @@ describe('DELETE /api/tasks/:id', () => {
 
     expect(res.status).toBe(404);
   });
+
+  it('returns 409 when trying to delete a DONE task', async () => {
+    const doneTask = { ...sampleTask, status: 'DONE' };
+    mockPrisma.task.findUnique.mockResolvedValue(doneTask);
+
+    const res = await request(app).delete('/api/tasks/task-1');
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('TASK_COMPLETED');
+  });
 });
 
 describe('PATCH /api/tasks/:id — cache invalidation', () => {
@@ -327,6 +390,7 @@ describe('PATCH /api/tasks/:id — cache invalidation', () => {
     const doneTask = { ...sampleTask, status: 'DONE', assigneeId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' };
     mockPrisma.task.findUnique.mockResolvedValue(inProgressTask);
     mockPrisma.task.update.mockResolvedValue(doneTask);
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
     mockPrisma.scoreEvent.create.mockResolvedValue({});
     mockPrisma.productivityScore.upsert.mockResolvedValue({});
     mockRedis.del.mockResolvedValue(1);
@@ -353,16 +417,33 @@ describe('PATCH /api/tasks/:id — cache invalidation', () => {
 });
 
 describe('DELETE /api/tasks/:id — cache invalidation', () => {
-  it('Test G (delete DONE task): calls redisClient.del with leaderboard:rankings', async () => {
+  it('Test G (delete DONE task without force): returns 409, does NOT call redisClient.del', async () => {
     const doneTask = { ...sampleTask, status: 'DONE', assigneeId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' };
     mockPrisma.task.findUnique.mockResolvedValue(doneTask);
+
+    const res = await request(app).delete('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
+
+    expect(res.status).toBe(409);
+    expect(mockRedis.del).not.toHaveBeenCalled();
+  });
+
+  it('Test G2 (force delete DONE task): calls redisClient.del with leaderboard:rankings', async () => {
+    const doneTask = { ...sampleTask, status: 'DONE', assigneeId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' };
+    mockPrisma.task.findUnique.mockResolvedValue(doneTask);
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
+    mockPrisma.scoreEvent.findFirst.mockResolvedValue({ userId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' });
+    mockPrisma.scoreEvent.deleteMany.mockResolvedValue({});
     mockPrisma.task.delete.mockResolvedValue(doneTask);
-    mockPrisma.scoreEvent.aggregate.mockResolvedValue({ _sum: { totalAwarded: 20 }, _count: { id: 1 } });
+    mockPrisma.scoreEvent.aggregate.mockResolvedValue({ _sum: { totalAwarded: 0 }, _count: { id: 0 } });
     mockPrisma.productivityScore.upsert.mockResolvedValue({});
+    mockPrisma.user.findMany.mockResolvedValue([]);
     mockRedis.del.mockResolvedValue(1);
+    mockRedis.get.mockResolvedValue(null);
+    mockRedis.set.mockResolvedValue('OK');
 
-    await request(app).delete('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
+    const res = await request(app).delete('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11?force=true');
 
+    expect(res.status).toBe(204);
     expect(mockRedis.del).toHaveBeenCalledWith('leaderboard:rankings');
   });
 
@@ -374,6 +455,70 @@ describe('DELETE /api/tasks/:id — cache invalidation', () => {
     await request(app).delete('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
 
     expect(mockRedis.del).not.toHaveBeenCalled();
+  });
+});
+
+describe('DELETE /api/tasks/:id — force delete DONE task', () => {
+  it('returns 204 and deletes ScoreEvent + recalculates score', async () => {
+    const doneTask = { ...sampleTask, status: 'DONE', assigneeId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' };
+    mockPrisma.task.findUnique.mockResolvedValue(doneTask);
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
+    mockPrisma.scoreEvent.findFirst.mockResolvedValue({ userId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' });
+    mockPrisma.scoreEvent.deleteMany.mockResolvedValue({});
+    mockPrisma.task.delete.mockResolvedValue(doneTask);
+    mockPrisma.scoreEvent.aggregate.mockResolvedValue({ _sum: { totalAwarded: 20 }, _count: { id: 2 } });
+    mockPrisma.productivityScore.upsert.mockResolvedValue({});
+    mockPrisma.user.findMany.mockResolvedValue([]);
+    mockRedis.del.mockResolvedValue(1);
+    mockRedis.get.mockResolvedValue(null);
+    mockRedis.set.mockResolvedValue('OK');
+
+    const res = await request(app).delete('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11?force=true');
+
+    expect(res.status).toBe(204);
+    expect(mockPrisma.scoreEvent.deleteMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { taskId: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' } })
+    );
+    expect(mockPrisma.task.delete).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' } })
+    );
+    expect(mockPrisma.productivityScore.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ totalScore: 20, tasksCompleted: 2 }),
+      })
+    );
+  });
+
+  it('recalculates to zero score when no remaining ScoreEvents', async () => {
+    const doneTask = { ...sampleTask, status: 'DONE', assigneeId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' };
+    mockPrisma.task.findUnique.mockResolvedValue(doneTask);
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
+    mockPrisma.scoreEvent.findFirst.mockResolvedValue({ userId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' });
+    mockPrisma.scoreEvent.deleteMany.mockResolvedValue({});
+    mockPrisma.task.delete.mockResolvedValue(doneTask);
+    mockPrisma.scoreEvent.aggregate.mockResolvedValue({ _sum: { totalAwarded: null }, _count: { id: 0 } });
+    mockPrisma.productivityScore.upsert.mockResolvedValue({});
+    mockPrisma.user.findMany.mockResolvedValue([]);
+    mockRedis.del.mockResolvedValue(1);
+    mockRedis.get.mockResolvedValue(null);
+    mockRedis.set.mockResolvedValue('OK');
+
+    const res = await request(app).delete('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11?force=true');
+
+    expect(res.status).toBe(204);
+    expect(mockPrisma.productivityScore.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ totalScore: 0, tasksCompleted: 0 }),
+      })
+    );
+  });
+
+  it('returns 404 when task does not exist', async () => {
+    mockPrisma.task.findUnique.mockResolvedValue(null);
+
+    const res = await request(app).delete('/api/tasks/nonexistent?force=true');
+
+    expect(res.status).toBe(404);
   });
 });
 
