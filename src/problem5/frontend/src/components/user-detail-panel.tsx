@@ -67,7 +67,6 @@ export function UserDetailPanel({ userId, onClose }: UserDetailPanelProps) {
         <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-black/20 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
         <DialogPrimitive.Popup className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-white shadow-2xl flex flex-col data-open:animate-in data-open:slide-in-from-right data-closed:animate-out data-closed:slide-out-to-right duration-200 outline-none">
           {isLoading ? (
-            /* Loading skeleton */
             <div className="flex flex-col gap-4 p-6 h-full">
               <div className="animate-pulse bg-gray-100 rounded-xl h-24 w-full" />
               <div className="animate-pulse bg-gray-100 rounded-xl h-20 w-full" />
@@ -75,16 +74,13 @@ export function UserDetailPanel({ userId, onClose }: UserDetailPanelProps) {
             </div>
           ) : (
             <>
-              {/* Header */}
               <div className="relative flex items-start gap-4 px-5 pt-5 pb-4 border-b border-gray-100">
-                {/* Avatar */}
                 <div className="w-12 h-12 rounded-full bg-violet-400 flex items-center justify-center flex-shrink-0">
                   <span className="text-white text-sm font-extrabold">
                     {user ? getInitials(user.name) : '??'}
                   </span>
                 </div>
 
-                {/* Name + email */}
                 <div className="flex-1 min-w-0 pt-0.5">
                   <p className="font-bold text-gray-800 text-lg leading-tight truncate">
                     {user?.name ?? '—'}
@@ -92,7 +88,6 @@ export function UserDetailPanel({ userId, onClose }: UserDetailPanelProps) {
                   <p className="text-sm text-gray-500 font-semibold truncate">
                     {user?.email ?? '—'}
                   </p>
-                  {/* Department badge */}
                   {user?.department && (
                     <span className="mt-1.5 inline-block px-2.5 py-1 rounded-full bg-violet-100 text-violet-600 text-xs font-bold">
                       {user.department}
@@ -100,7 +95,6 @@ export function UserDetailPanel({ userId, onClose }: UserDetailPanelProps) {
                   )}
                 </div>
 
-                {/* Close button */}
                 <DialogPrimitive.Close
                   className="absolute top-3 right-3 h-8 w-8 rounded-xl flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors outline-none focus:ring-2 focus:ring-violet-400"
                   aria-label="Close panel"
@@ -109,22 +103,18 @@ export function UserDetailPanel({ userId, onClose }: UserDetailPanelProps) {
                 </DialogPrimitive.Close>
               </div>
 
-              {/* Stats row */}
               <div className="px-5 py-4 border-b border-gray-100">
                 <div className={`grid gap-3 ${userEntry ? 'grid-cols-4' : 'grid-cols-3'}`}>
-                  {/* Total Tasks */}
                   <div className="rounded-xl bg-violet-50 border border-violet-100 p-3 text-center">
                     <p className="text-2xl font-extrabold text-violet-600">{totalTasks}</p>
                     <p className="text-xs text-gray-400 font-semibold mt-0.5">Total Tasks</p>
                   </div>
 
-                  {/* Completed */}
                   <div className="rounded-xl bg-violet-50 border border-violet-100 p-3 text-center">
                     <p className="text-2xl font-extrabold text-violet-600">{completedTasks}</p>
                     <p className="text-xs text-gray-400 font-semibold mt-0.5">Completed</p>
                   </div>
 
-                  {/* Score */}
                   <div className="rounded-xl bg-violet-50 border border-violet-100 p-3 text-center">
                     <p className="text-2xl font-extrabold text-violet-600">
                       {userEntry?.totalScore ?? '—'}
@@ -132,7 +122,6 @@ export function UserDetailPanel({ userId, onClose }: UserDetailPanelProps) {
                     <p className="text-xs text-gray-400 font-semibold mt-0.5">Score</p>
                   </div>
 
-                  {/* Rank (only if on leaderboard) */}
                   {userEntry && (
                     <div className="rounded-xl bg-orange-50 border border-orange-100 p-3 text-center">
                       <p className="text-2xl font-extrabold text-orange-500">
@@ -144,7 +133,6 @@ export function UserDetailPanel({ userId, onClose }: UserDetailPanelProps) {
                 </div>
               </div>
 
-              {/* Task list */}
               <div className="flex-1 overflow-y-auto px-5 py-4">
                 <p className="text-sm font-extrabold text-gray-500 uppercase tracking-wider mb-3">
                   Assigned Tasks
@@ -161,17 +149,14 @@ export function UserDetailPanel({ userId, onClose }: UserDetailPanelProps) {
                         key={task.id}
                         className="flex items-center gap-3 py-2.5 border-b border-gray-50 last:border-0"
                       >
-                        {/* Status dot */}
                         <span
                           className={`w-2 h-2 rounded-full flex-shrink-0 ${statusDotClass[task.status]}`}
                         />
 
-                        {/* Task title */}
                         <span className="text-sm font-semibold text-gray-700 flex-1 truncate">
                           {task.title}
                         </span>
 
-                        {/* Priority badge */}
                         <span
                           className={`px-2.5 py-1 rounded-full text-xs font-bold flex-shrink-0 ${priorityBadgeClass[task.priority]}`}
                         >

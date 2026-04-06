@@ -3,7 +3,6 @@ import { randomUUID } from 'crypto';
 
 export function correlationIdMiddleware(req: Request, res: Response, next: NextFunction): void {
   const id = (req.headers['x-request-id'] as string) || randomUUID();
-  // Attach to req for pino-http to pick up via genReqId
   (req as any).id = id;
   res.setHeader('X-Request-Id', id);
   next();

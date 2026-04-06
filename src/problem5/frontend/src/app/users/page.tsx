@@ -72,7 +72,6 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-2xl bg-violet-400 flex items-center justify-center shadow-[0_3px_0_0_rgba(0,0,0,0.15)]">
@@ -93,7 +92,6 @@ export default function UsersPage() {
         />
       </div>
 
-      {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
@@ -136,7 +134,6 @@ export default function UsersPage() {
         </div>
       ) : (
         <div className="rounded-xl bg-white border-b-4 border-violet-200 shadow-[0_4px_0_0_rgba(139,92,246,0.20)] overflow-hidden">
-          {/* Table header */}
           <div className="grid grid-cols-[1fr_1.5fr_1fr_80px] gap-4 px-6 py-3 bg-violet-50 border-b border-violet-100">
             <span className="text-xs font-extrabold text-violet-500 uppercase tracking-wider">Name</span>
             <span className="text-xs font-extrabold text-violet-500 uppercase tracking-wider">Email</span>
@@ -144,7 +141,6 @@ export default function UsersPage() {
             <span className="text-xs font-extrabold text-violet-500 uppercase tracking-wider text-right">Actions</span>
           </div>
 
-          {/* Rows */}
           <div className="divide-y divide-gray-50">
             {pageUsers.map((user) => (
               <div key={user.id} className="grid grid-cols-[1fr_1.5fr_1fr_80px] gap-4 px-6 py-4 items-center hover:bg-orange-50/40 transition-colors cursor-pointer" onClick={() => setSelectedUserId(user.id)}>
@@ -177,7 +173,6 @@ export default function UsersPage() {
                 </div>
               </div>
             ))}
-            {/* Pad rows */}
             {Array.from({ length: PAGE_SIZE - pageUsers.length }).map((_, i) => (
               <div key={`pad-${i}`} className="px-6 py-4 opacity-0 pointer-events-none select-none">
                 <span>&nbsp;</span>
@@ -185,7 +180,6 @@ export default function UsersPage() {
             ))}
           </div>
 
-          {/* Pagination */}
           {totalPages > 1 && (
             <div className="px-6 py-3 border-t border-violet-100 bg-violet-50/40">
               <PaginationBar

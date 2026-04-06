@@ -19,7 +19,6 @@ export function Nav() {
     <header className="bg-white border-b-4 border-orange-200 shadow-[0_4px_0_0_rgba(251,146,60,0.15)]">
       <div className="container mx-auto px-4">
         <div className="flex h-16 items-center justify-between">
-          {/* Logo */}
           <Link href="/" className="flex items-center gap-2 group">
             <div className="flex items-center justify-center w-9 h-9 rounded-2xl bg-orange-400 shadow-[0_3px_0_0_rgba(0,0,0,0.15)] group-hover:translate-y-px group-hover:shadow-[0_2px_0_0_rgba(0,0,0,0.15)] transition-all">
               <Zap className="h-5 w-5 text-white" />
@@ -29,7 +28,6 @@ export function Nav() {
             </span>
           </Link>
 
-          {/* Nav pills */}
           <nav className="flex items-center gap-1 bg-orange-50 rounded-2xl p-1.5 border-2 border-orange-100">
             {navItems.map(({ href, label, icon: Icon }) => {
               const active = pathname === href;

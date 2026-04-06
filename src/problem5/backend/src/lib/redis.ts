@@ -9,6 +9,5 @@ export const redisClient = new Redis(REDIS_URL, {
 });
 
 redisClient.on('error', (err: Error) => {
-  // Log but don't crash — Redis unavailability is handled gracefully per CACHE-04
   console.error('[redis] connection error:', err.message);
 });

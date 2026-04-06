@@ -119,7 +119,6 @@ export function StatsCards({ stats }: StatsCardsProps) {
 
   return (
     <div className="space-y-8">
-      {/* Stat cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {statCards.map(({ key, label, icon: Icon, bg, border, shadow, text, sub, iconBg }) => (
           <div
@@ -142,9 +141,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
         ))}
       </div>
 
-      {/* Tasks by member + Top performers */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        {/* Tasks by Member */}
         <div className="rounded-3xl bg-white border-b-4 border-orange-200 shadow-[0_4px_0_0_rgba(251,146,60,0.25)] p-6">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-8 h-8 rounded-xl bg-orange-100 flex items-center justify-center">
@@ -159,7 +156,6 @@ export function StatsCards({ stats }: StatsCardsProps) {
           )}
         </div>
 
-        {/* Top Performers */}
         <div className="rounded-3xl bg-white border-b-4 border-yellow-200 shadow-[0_4px_0_0_rgba(234,179,8,0.25)] p-6">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-8 h-8 rounded-xl bg-yellow-100 flex items-center justify-center">

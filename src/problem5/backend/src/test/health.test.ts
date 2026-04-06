@@ -1,8 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import { app } from '../app.js';
 
-// Mock prisma and redis for health check tests
 vi.mock('../lib/prisma', () => ({
   prisma: {
     $queryRaw: vi.fn(),
@@ -45,7 +44,7 @@ describe('GET /api/health', () => {
 
     const res = await request(app).get('/api/health');
 
-    expect(res.status).toBe(200); // always 200
+    expect(res.status).toBe(200);
     expect(res.body.status).toBe('degraded');
     expect(res.body.checks.database).toBe('ok');
     expect(res.body.checks.redis).toBe('error');
@@ -57,7 +56,7 @@ describe('GET /api/health', () => {
 
     const res = await request(app).get('/api/health');
 
-    expect(res.status).toBe(200); // always 200
+    expect(res.status).toBe(200);
     expect(res.body.status).toBe('degraded');
     expect(res.body.checks.database).toBe('error');
     expect(res.body.checks.redis).toBe('ok');
@@ -69,7 +68,7 @@ describe('GET /api/health', () => {
 
     const res = await request(app).get('/api/health');
 
-    expect(res.status).toBe(200); // always 200
+    expect(res.status).toBe(200);
     expect(res.body.status).toBe('degraded');
     expect(res.body.checks.database).toBe('error');
     expect(res.body.checks.redis).toBe('error');

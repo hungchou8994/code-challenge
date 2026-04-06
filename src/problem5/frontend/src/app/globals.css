@@ -49,21 +49,17 @@
 }
 
 :root {
-  /* Warm cream background */
   --background: oklch(0.98 0.012 85);
   --foreground: oklch(0.22 0.02 60);
 
-  /* Warm white cards */
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.22 0.02 60);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.22 0.02 60);
 
-  /* Vibrant orange primary (CTA) */
   --primary: oklch(0.68 0.19 42);
   --primary-foreground: oklch(1 0 0);
 
-  /* Soft peach secondary */
   --secondary: oklch(0.94 0.04 60);
   --secondary-foreground: oklch(0.40 0.08 50);
 
@@ -76,14 +72,12 @@
   --input: oklch(0.95 0.02 80);
   --ring: oklch(0.68 0.19 42);
 
-  /* Chart colors — orange, violet, sky, emerald, pink */
   --chart-1: oklch(0.68 0.19 42);
   --chart-2: oklch(0.60 0.20 310);
   --chart-3: oklch(0.62 0.18 220);
   --chart-4: oklch(0.62 0.16 160);
   --chart-5: oklch(0.68 0.20 355);
 
-  /* Large radius for Claymorphism */
   --radius: 1rem;
 
   --sidebar: oklch(0.97 0.015 85);
@@ -135,7 +129,6 @@
   }
 }
 
-/* Claymorphism utility classes */
 @layer utilities {
   .clay {
     box-shadow:

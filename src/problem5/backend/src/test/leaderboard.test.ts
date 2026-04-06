@@ -1,8 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import { app } from '../app.js';
 
-// Mock redis BEFORE other imports to ensure module isolation
 vi.mock('../lib/redis', () => ({
   redisClient: {
     get: vi.fn(),
@@ -23,7 +22,7 @@ beforeEach(() => {
 
 describe('GET /api/leaderboard', () => {
   it('returns ranked leaderboard entries sorted by score', async () => {
-    mockRedis.get.mockResolvedValue(null); // cache miss
+    mockRedis.get.mockResolvedValue(null);
     mockPrisma.user.findMany.mockResolvedValue([
       {
         id: 'user-1',
@@ -44,7 +43,7 @@ describe('GET /api/leaderboard', () => {
         name: 'Charlie',
         email: 'charlie@example.com',
         department: 'Design',
-        productivityScore: null, // no completed tasks
+        productivityScore: null,
       },
     ]);
     mockRedis.set.mockResolvedValue('OK');
@@ -54,7 +53,6 @@ describe('GET /api/leaderboard', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(3);
 
-    // Should be sorted by score desc
     expect(res.body[0].userName).toBe('Bob');
     expect(res.body[0].totalScore).toBe(50);
     expect(res.body[0].rank).toBe(1);
@@ -69,7 +67,7 @@ describe('GET /api/leaderboard', () => {
   });
 
   it('returns empty array when no users', async () => {
-    mockRedis.get.mockResolvedValue(null); // cache miss
+    mockRedis.get.mockResolvedValue(null);
     mockPrisma.user.findMany.mockResolvedValue([]);
     mockRedis.set.mockResolvedValue('OK');
 
@@ -80,7 +78,7 @@ describe('GET /api/leaderboard', () => {
   });
 
   it('returns correct shape for each entry', async () => {
-    mockRedis.get.mockResolvedValue(null); // cache miss
+    mockRedis.get.mockResolvedValue(null);
     mockPrisma.user.findMany.mockResolvedValue([
       {
         id: 'user-1',
@@ -106,8 +104,6 @@ describe('GET /api/leaderboard', () => {
     expect(entry.tasksCompleted).toBe(1);
   });
 });
-
-// Health check tests are in health.test.ts — this file focuses on leaderboard endpoints
 
 describe('GET /api/leaderboard — cache behavior', () => {
   const cachedRankings = [
@@ -138,7 +134,6 @@ describe('GET /api/leaderboard — cache behavior', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual(cachedRankings);
-    // DB should NOT be called on cache hit
     expect(mockPrisma.user.findMany).not.toHaveBeenCalled();
   });
 
@@ -158,16 +153,13 @@ describe('GET /api/leaderboard — cache behavior', () => {
     const res = await request(app).get('/api/leaderboard');
 
     expect(res.status).toBe(200);
-    // DB should be called on cache miss
     expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(1);
-    // Redis set should be called with correct key, serialized value, and TTL of 60
     expect(mockRedis.set).toHaveBeenCalledWith(
       'leaderboard:rankings',
       expect.any(String),
       'EX',
       60
     );
-    // Verify the stored value is valid JSON
     const storedValue = mockRedis.set.mock.calls[0][1];
     expect(() => JSON.parse(storedValue)).not.toThrow();
   });
@@ -187,11 +179,9 @@ describe('GET /api/leaderboard — cache behavior', () => {
 
     const res = await request(app).get('/api/leaderboard');
 
-    // Should still return 200 — graceful degradation
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
     expect(res.body[0].userName).toBe('Alice');
-    // DB should be called since Redis was unavailable
     expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(1);
   });
 
@@ -210,9 +200,11 @@ describe('GET /api/leaderboard — cache behavior', () => {
 
     const res = await request(app).get('/api/leaderboard');
 
-    // Should still return 200 — graceful degradation
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
     expect(res.body[0].userName).toBe('Alice');
   });
 });
+
+
+

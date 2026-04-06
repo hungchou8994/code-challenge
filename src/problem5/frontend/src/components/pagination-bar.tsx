@@ -4,13 +4,13 @@ import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface PaginationBarProps {
-  page: number;           // 0-indexed
+  page: number;
   totalPages: number;
   onPageChange: (page: number) => void;
   totalItems?: number;
   pageSize?: number;
   itemLabel?: string;
-  accentClass?: string;  // e.g. 'bg-indigo-600 hover:bg-indigo-700'
+  accentClass?: string;
 }
 
 function getPageNumbers(page: number, totalPages: number): (number | '...')[] {

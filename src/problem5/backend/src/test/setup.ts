@@ -1,6 +1,5 @@
-import { vi } from 'vitest';
+﻿import { vi } from 'vitest';
 
-// Mock the prisma module before any tests run
 vi.mock('../lib/prisma', () => ({
   prisma: {
     user: {

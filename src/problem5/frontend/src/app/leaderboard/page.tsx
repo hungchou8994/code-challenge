@@ -23,14 +23,13 @@ export default function LeaderboardPage() {
     });
 
     es.onerror = () => {
-      // EventSource auto-reconnects; just mark not loading
       setIsLoading(false);
     };
 
     return () => {
-      es.close(); // cleanup on unmount — prevents memory leak
+      es.close();
     };
-  }, []); // empty deps — connect once on mount
+  }, []);
 
   return (
     <div className="space-y-4">

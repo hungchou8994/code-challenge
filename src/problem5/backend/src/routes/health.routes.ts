@@ -17,7 +17,6 @@ router.get('/', async (_req, res) => {
 
   const status = checks.database === 'ok' && checks.redis === 'ok' ? 'ok' : 'degraded';
 
-  // Always return 200 — never 503 (per OBS-04 spec)
   res.status(200).json({
     status,
     checks,

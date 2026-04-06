@@ -5,7 +5,6 @@ import { redisClient } from '../lib/redis.js';
 import { sseManager } from '../lib/sse-manager.js';
 import type { CreateTaskBody, UpdateTaskBody } from '../schemas/task.schemas.js';
 
-// Valid transitions per D-13: TODO -> IN_PROGRESS -> DONE only
 const VALID_TRANSITIONS: Record<string, string[]> = {
   TODO: ['IN_PROGRESS'],
   IN_PROGRESS: ['DONE'],
@@ -25,13 +24,11 @@ export const taskService = {
     if (query.status) where.status = query.status;
     if (query.assigneeId) where.assigneeId = query.assigneeId;
 
-    // Build orderBy based on sortBy parameter
-    let orderBy: any = { createdAt: 'desc' }; // default sort
+    let orderBy: any = { createdAt: 'desc' };
     if (query.sortBy) {
       const order = query.sortOrder || 'asc';
       switch (query.sortBy) {
         case 'priority':
-          // Custom priority ordering handled after query
           orderBy = { priority: order };
           break;
         case 'dueDate':
@@ -52,7 +49,6 @@ export const taskService = {
       include: { assignee: { select: { id: true, name: true, email: true } } },
     });
 
-    // For priority sorting, apply correct order (HIGH > MEDIUM > LOW)
     if (query.sortBy === 'priority') {
       const priorityOrder: Record<string, number> = { HIGH: 3, MEDIUM: 2, LOW: 1 };
       const sortDir = query.sortOrder === 'asc' ? 1 : -1;
@@ -72,7 +68,6 @@ export const taskService = {
   },
 
   async create(data: CreateTaskBody) {
-    // Verify assignee exists if provided
     if (data.assigneeId) {
       const assignee = await prisma.user.findUnique({ where: { id: data.assigneeId } });
       if (!assignee) throw new NotFoundError('User', data.assigneeId);
@@ -94,7 +89,6 @@ export const taskService = {
   async update(id: string, data: UpdateTaskBody) {
     const existing = await taskService.getById(id);
 
-    // Handle status transition validation per D-13
     if (data.status && data.status !== existing.status) {
       const allowed = VALID_TRANSITIONS[existing.status] || [];
       if (!allowed.includes(data.status)) {
@@ -104,7 +98,6 @@ export const taskService = {
         );
       }
 
-      // Per D-15: unassigned tasks cannot transition to DONE
       if (data.status === 'DONE') {
         const currentAssigneeId = data.assigneeId !== undefined ? data.assigneeId : existing.assigneeId;
         if (!currentAssigneeId) {
@@ -130,7 +123,6 @@ export const taskService = {
       include: { assignee: { select: { id: true, name: true, email: true } } },
     });
 
-    // Per D-14: Trigger scoring synchronously if task just moved to DONE
     if (data.status === 'DONE' && existing.status !== 'DONE' && updated.assigneeId) {
       await leaderboardService.scoreTask({
         id: updated.id,
@@ -138,9 +130,7 @@ export const taskService = {
         priority: updated.priority,
         dueDate: updated.dueDate,
       });
-      // Invalidate leaderboard cache after score update (CACHE-03)
-      try { await redisClient.del(LEADERBOARD_CACHE_KEY); } catch { /* Redis unavailable */ }
-      // SSE-03: broadcast updated rankings to all connected clients
+      try { await redisClient.del(LEADERBOARD_CACHE_KEY); } catch {}
       const updatedRankings = await leaderboardService.getRankings();
       sseManager.broadcast(updatedRankings);
     }
@@ -151,15 +141,11 @@ export const taskService = {
   async delete(id: string) {
     const task = await taskService.getById(id);
 
-    // If task is DONE it has score_events attached.
-    // CASCADE will remove them, so we must recalculate the assignee's
-    // productivity_score afterwards to keep the leaderboard consistent.
     const affectedUserId = task.status === 'DONE' ? task.assigneeId : null;
 
     await prisma.task.delete({ where: { id } });
 
     if (affectedUserId) {
-      // Sum remaining score_events for that user after the cascade delete
       const agg = await prisma.scoreEvent.aggregate({
         where: { userId: affectedUserId },
         _sum: { totalAwarded: true },
@@ -181,8 +167,7 @@ export const taskService = {
           tasksCompleted: newCount,
         },
       });
-      // Invalidate leaderboard cache after score recalculation (CACHE-03)
-      try { await redisClient.del(LEADERBOARD_CACHE_KEY); } catch { /* Redis unavailable */ }
+      try { await redisClient.del(LEADERBOARD_CACHE_KEY); } catch {}
     }
   },
 };

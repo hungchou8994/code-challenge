@@ -1,20 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Import after mocking if needed, but SseManager has NO dependencies — import directly
-// We use unique IDs per test to avoid cross-test bleed with the singleton
 import { sseManager } from '../lib/sse-manager.js';
 
-// Helper: fake Express Response
 const makeRes = () => ({ write: vi.fn() } as any);
 
 describe('SseManager', () => {
-  // Use unique IDs per test to avoid singleton cross-contamination
   let testId1: string;
   let testId2: string;
   let testId3: string;
 
   beforeEach(() => {
-    // Generate unique IDs per test run to isolate singleton state
     const ts = Date.now() + Math.random().toString(36).slice(2);
     testId1 = `test-client-a-${ts}`;
     testId2 = `test-client-b-${ts}`;
@@ -22,7 +17,6 @@ describe('SseManager', () => {
   });
 
   afterEach(() => {
-    // Clean up any clients added during this test
     sseManager.removeClient(testId1);
     sseManager.removeClient(testId2);
     sseManager.removeClient(testId3);
@@ -66,7 +60,6 @@ describe('SseManager', () => {
   });
 
   it('Test 4 (no clients): broadcast() resolves without throwing when no clients are connected', () => {
-    // All clients removed or never added — no throw expected
     expect(() => {
       sseManager.broadcast([]);
     }).not.toThrow();

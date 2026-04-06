@@ -29,7 +29,7 @@ export interface CreateTaskInput {
   status?: TaskStatus;
   priority: TaskPriority;
   assigneeId?: string;
-  dueDate: string; // ISO date string from client
+  dueDate: string;
 }
 
 export interface UpdateTaskInput {
@@ -41,7 +41,6 @@ export interface UpdateTaskInput {
   dueDate?: string;
 }
 
-// Valid status transitions per D-13
 export const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   [TaskStatus.TODO]: [TaskStatus.IN_PROGRESS],
   [TaskStatus.IN_PROGRESS]: [TaskStatus.DONE],

@@ -1,8 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import { app } from '../app.js';
 
-// Mock redis BEFORE other imports to ensure module isolation
 vi.mock('../lib/redis', () => ({
   redisClient: {
     get: vi.fn(),
@@ -11,10 +10,9 @@ vi.mock('../lib/redis', () => ({
   },
 }));
 
-// Mock sseManager to prevent actual SSE writes during task update tests (SSE-03)
 vi.mock('../lib/sse-manager', () => ({
   sseManager: { broadcast: vi.fn() },
-}));
+}))
 
 import { prisma } from '../lib/prisma.js';
 import { redisClient } from '../lib/redis.js';
@@ -31,8 +29,8 @@ const sampleUser = {
   updatedAt: new Date('2024-01-01'),
 };
 
-const futureDueDate = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(); // 7 days from now
-const pastDueDate = new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString(); // 7 days ago
+const futureDueDate = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString();
+const pastDueDate = new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString();
 
 const sampleTask = {
   id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
@@ -49,10 +47,8 @@ const sampleTask = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Default mock for leaderboard getRankings() called after DONE transition (SSE-03)
-  // Prevents "Cannot read properties of undefined (reading 'map')" in task.service
   mockPrisma.user.findMany.mockResolvedValue([]);
-  mockRedis.get.mockResolvedValue(null); // cache miss so it falls through to DB
+  mockRedis.get.mockResolvedValue(null);
 });
 
 describe('GET /api/tasks', () => {
@@ -257,11 +253,10 @@ describe('PATCH /api/tasks/:id — scoring logic', () => {
       .patch('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
       .send({ status: 'DONE' });
 
-    // Due date is future so it's EARLY — should add EARLY_BONUS (+5) to MEDIUM base (10) = 15
     const scoreCall = mockPrisma.scoreEvent.create.mock.calls[0][0];
-    expect(scoreCall.data.points).toBe(10); // MEDIUM base
-    expect(scoreCall.data.bonus).toBe(5);   // early bonus
-    expect(scoreCall.data.totalAwarded).toBe(15); // 10 + 5
+    expect(scoreCall.data.points).toBe(10);
+    expect(scoreCall.data.bonus).toBe(5);
+    expect(scoreCall.data.totalAwarded).toBe(15);
   });
 
   it('awards HIGH base points (20) for high priority task', async () => {
@@ -278,7 +273,7 @@ describe('PATCH /api/tasks/:id — scoring logic', () => {
       .send({ status: 'DONE' });
 
     const scoreCall = mockPrisma.scoreEvent.create.mock.calls[0][0];
-    expect(scoreCall.data.points).toBe(20); // HIGH base
+    expect(scoreCall.data.points).toBe(20);
   });
 
   it('applies late penalty (-3) for overdue task completion', async () => {
@@ -286,7 +281,7 @@ describe('PATCH /api/tasks/:id — scoring logic', () => {
       ...sampleTask,
       status: 'IN_PROGRESS',
       priority: 'MEDIUM',
-      dueDate: new Date(pastDueDate), // past due date
+      dueDate: new Date(pastDueDate),
     };
     const doneLateTask = { ...inProgressLateTask, status: 'DONE', assigneeId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' };
     mockPrisma.task.findUnique.mockResolvedValue(inProgressLateTask);
@@ -300,10 +295,10 @@ describe('PATCH /api/tasks/:id — scoring logic', () => {
       .send({ status: 'DONE' });
 
     const scoreCall = mockPrisma.scoreEvent.create.mock.calls[0][0];
-    expect(scoreCall.data.points).toBe(10);   // MEDIUM base
-    expect(scoreCall.data.bonus).toBe(0);     // no early bonus
-    expect(scoreCall.data.penalty).toBe(3);   // late penalty stored as positive
-    expect(scoreCall.data.totalAwarded).toBe(7); // 10 - 3
+    expect(scoreCall.data.points).toBe(10);
+    expect(scoreCall.data.bonus).toBe(0);
+    expect(scoreCall.data.penalty).toBe(3);
+    expect(scoreCall.data.totalAwarded).toBe(7);
   });
 });
 
@@ -340,7 +335,6 @@ describe('PATCH /api/tasks/:id — cache invalidation', () => {
       .patch('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
       .send({ status: 'DONE' });
 
-    // Cache must be invalidated on DONE transition
     expect(mockRedis.del).toHaveBeenCalledWith('leaderboard:rankings');
   });
 
@@ -354,7 +348,6 @@ describe('PATCH /api/tasks/:id — cache invalidation', () => {
       .patch('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
       .send({ status: 'IN_PROGRESS' });
 
-    // Cache should NOT be invalidated for non-DONE transitions
     expect(mockRedis.del).not.toHaveBeenCalled();
   });
 });
@@ -370,7 +363,6 @@ describe('DELETE /api/tasks/:id — cache invalidation', () => {
 
     await request(app).delete('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
 
-    // Cache must be invalidated after deleting a DONE task
     expect(mockRedis.del).toHaveBeenCalledWith('leaderboard:rankings');
   });
 
@@ -381,7 +373,10 @@ describe('DELETE /api/tasks/:id — cache invalidation', () => {
 
     await request(app).delete('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
 
-    // Cache should NOT be invalidated for non-DONE task deletion
     expect(mockRedis.del).not.toHaveBeenCalled();
   });
 });
+
+
+
+

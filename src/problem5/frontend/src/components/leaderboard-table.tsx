@@ -39,7 +39,6 @@ export function LeaderboardTable({ entries }: LeaderboardTableProps) {
 
   const handleFilterChange = () => setPage(0);
 
-  // Top 3 always from the full unfiltered entries (global ranking)
   const top3 = entries.slice(0, 3);
 
   if (entries.length === 0) {
@@ -57,7 +56,6 @@ export function LeaderboardTable({ entries }: LeaderboardTableProps) {
 
   return (
     <div className="space-y-3">
-      {/* Top 3 podium (always visible, always global top 3) */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-2 items-end">
         {[top3[1], top3[0], top3[2]].map((entry, i) => {
           const podiumOrder = [2, 1, 3];
@@ -86,7 +84,6 @@ export function LeaderboardTable({ entries }: LeaderboardTableProps) {
         })}
       </div>
 
-      {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
@@ -119,9 +116,7 @@ export function LeaderboardTable({ entries }: LeaderboardTableProps) {
         )}
       </div>
 
-      {/* Table */}
       <div className="rounded-xl bg-white border-b-4 border-amber-200 shadow-[0_4px_0_0_rgba(251,191,36,0.20)] overflow-hidden">
-        {/* Header */}
         <div className="grid grid-cols-[60px_1fr_140px_100px_100px] gap-4 px-6 py-3 bg-amber-50 border-b border-amber-100">
           <span className="text-xs font-extrabold text-amber-600 uppercase tracking-wider">Rank</span>
           <span className="text-xs font-extrabold text-amber-600 uppercase tracking-wider">Name</span>
@@ -130,7 +125,6 @@ export function LeaderboardTable({ entries }: LeaderboardTableProps) {
           <span className="text-xs font-extrabold text-amber-600 uppercase tracking-wider text-right hidden sm:block">Tasks Done</span>
         </div>
 
-        {/* Rows */}
         <div className="divide-y divide-gray-50">
           {filtered.length === 0 ? (
             <div className="px-6 py-12 text-center">
@@ -171,7 +165,6 @@ export function LeaderboardTable({ entries }: LeaderboardTableProps) {
                   <span className="text-sm text-gray-400 font-semibold text-right hidden sm:block">{entry.tasksCompleted}</span>
                 </div>
               ))}
-              {/* Pad rows - same structure as real rows to maintain fixed height */}
               {Array.from({ length: padRows }).map((_, i) => (
                 <div key={`pad-${i}`} className="grid grid-cols-[60px_1fr_140px_100px_100px] gap-4 px-6 py-3.5 items-center opacity-0 pointer-events-none select-none" aria-hidden="true">
                   <div className="w-8 h-8 rounded-full bg-gray-100" />
@@ -185,7 +178,6 @@ export function LeaderboardTable({ entries }: LeaderboardTableProps) {
           )}
         </div>
 
-        {/* Pagination */}
         {totalPages > 1 && (
           <div className="px-6 py-3 border-t border-amber-100 bg-amber-50/40">
             <PaginationBar

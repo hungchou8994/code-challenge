@@ -9,11 +9,11 @@ import { FilterBar } from '@/components/filter-bar';
 import { TaskForm } from '@/components/task-form';
 import { PaginationBar } from '@/components/pagination-bar';
 import { api } from '@/lib/api-client';
-import type { Task } from 'shared/types/task';
+import { TaskStatus, type Task } from 'shared/types/task';
 
-const NEXT_STATUS: Record<string, string> = {
-  TODO: 'IN_PROGRESS',
-  IN_PROGRESS: 'DONE',
+const NEXT_STATUS: Record<string, Task['status']> = {
+  TODO: TaskStatus.IN_PROGRESS,
+  IN_PROGRESS: TaskStatus.DONE,
 };
 
 const NEXT_STATUS_LABEL: Record<string, string> = {
@@ -107,8 +107,7 @@ export default function TasksPage() {
   const handleTransition = (task: Task) => {
     const nextStatus = NEXT_STATUS[task.status];
     if (!nextStatus) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    updateMutation.mutate({ id: task.id, data: { status: nextStatus as any } });
+    updateMutation.mutate({ id: task.id, data: { status: nextStatus } });
   };
 
   const handleDelete = (task: Task) => {
@@ -119,7 +118,6 @@ export default function TasksPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-2xl bg-sky-400 flex items-center justify-center shadow-[0_3px_0_0_rgba(0,0,0,0.15)]">
@@ -137,12 +135,10 @@ export default function TasksPage() {
               <Plus className="h-4 w-4 mr-1.5" />Add Task
             </Button>
           }
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          onSubmit={(data) => createMutation.mutateAsync(data as any)}
+          onSubmit={(data) => createMutation.mutateAsync(data as Parameters<typeof api.tasks.create>[0])}
         />
       </div>
 
-      {/* Filters */}
       <FilterBar
         status={filters.status}
         assigneeId={filters.assigneeId}
@@ -150,7 +146,6 @@ export default function TasksPage() {
         onChange={handleFilterChange}
       />
 
-      {/* Task list */}
       {isLoading ? (
         <p className="text-gray-400 font-semibold">Loading...</p>
       ) : tasks.length === 0 ? (
@@ -168,14 +163,12 @@ export default function TasksPage() {
               className={`rounded-xl bg-white border-b-4 ${CARD_BORDER[task.status]} p-5 flex items-center gap-4 hover:-translate-y-0.5 transition-all duration-150`}
             >
 
-              {/* Status dot */}
               <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
                 task.status === 'DONE' ? 'bg-emerald-400' :
                 task.status === 'IN_PROGRESS' ? 'bg-sky-400' :
                 'bg-gray-300'
               }`} />
 
-              {/* Content */}
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2 mb-1">
                   <span className="font-extrabold text-gray-800 truncate">{task.title}</span>
@@ -195,7 +188,6 @@ export default function TasksPage() {
                 </div>
               </div>
 
-              {/* Actions */}
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 {NEXT_STATUS[task.status] && !task.assigneeId && (
                   <span className="text-xs text-gray-400 font-semibold italic mr-1">Assign first</span>
@@ -219,8 +211,7 @@ export default function TasksPage() {
                       <Pencil className="h-4 w-4" />
                     </Button>
                   }
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  onSubmit={(data) => updateMutation.mutateAsync({ id: task.id, data: data as any })}
+                  onSubmit={(data) => updateMutation.mutateAsync({ id: task.id, data: data as Parameters<typeof api.tasks.update>[1] })}
                 />
                 <Button
                   variant="ghost"
@@ -234,7 +225,6 @@ export default function TasksPage() {
               </div>
             </div>
           ))}
-          {/* Pad empty rows so last page keeps same height as full pages */}
           {Array.from({ length: PAGE_SIZE - paginated.length }).map((_, i) => (
             <div key={`empty-${i}`} className="rounded-xl bg-white border-b-4 border-transparent p-5 flex items-center gap-4 opacity-0 pointer-events-none select-none" aria-hidden="true">
               <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-gray-300" />
@@ -258,7 +248,6 @@ export default function TasksPage() {
         </div>
       )}
 
-      {/* Pagination */}
       {!isLoading && tasks.length > 0 && totalPages > 1 && (
         <PaginationBar
           page={safePage - 1}

@@ -43,7 +43,6 @@ export function errorHandler(err: Error, _req: Request, res: Response, _next: Ne
     return;
   }
 
-  // Prisma unique constraint violation (duplicate email etc.)
   if (err && typeof err === 'object' && 'code' in err && (err as any).code === 'P2002') {
     const target = (err as any).meta?.target;
     const field = Array.isArray(target) ? target[0] : 'field';
@@ -56,7 +55,6 @@ export function errorHandler(err: Error, _req: Request, res: Response, _next: Ne
     return;
   }
 
-  // Prisma foreign key constraint (e.g., deleting user with tasks)
   if (err && typeof err === 'object' && 'code' in err && (err as any).code === 'P2003') {
     res.status(StatusCodes.CONFLICT).json({
       error: {

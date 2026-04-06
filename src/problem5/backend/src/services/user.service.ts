@@ -20,7 +20,6 @@ export const userService = {
   },
 
   async update(id: string, data: UpdateUserBody) {
-    // Verify user exists first
     await userService.getById(id);
     return prisma.user.update({
       where: { id },
@@ -29,10 +28,8 @@ export const userService = {
   },
 
   async delete(id: string) {
-    // Verify user exists first
     await userService.getById(id);
 
-    // Check if user has assigned tasks — per D-08
     const taskCount = await prisma.task.count({
       where: { assigneeId: id },
     });
