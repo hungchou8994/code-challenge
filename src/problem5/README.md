@@ -17,7 +17,7 @@ docker compose up --build
 That's it. Docker will:
 1. Start a PostgreSQL 16 database
 2. Start a Redis 7 cache (backend waits for it to be healthy)
-3. Build and start the backend (runs migrations + seed automatically on first boot)
+3. Build and start the backend (runs database migrations automatically on first boot)
 4. Build and start the frontend
 
 | Service      | URL                              |
@@ -26,6 +26,20 @@ That's it. Docker will:
 | Backend API  | http://localhost:3000            |
 | Health check | http://localhost:3000/api/health |
 | SSE stream   | http://localhost:3000/api/leaderboard/stream |
+
+### Seed sample data (optional)
+
+Load ~106 users and ~320 tasks with realistic scores and leaderboard data:
+
+```bash
+# Find your db container name
+docker ps
+
+# Run seed (replace 'problem5-db-1' with your actual container name if different)
+docker exec -i problem5-db-1 psql -U postgres -d productivity_tracker < seed.sql
+```
+
+The seed file uses `TRUNCATE ... CASCADE` at the top, so it is safe to re-run — it clears all data first and reloads from scratch.
 
 To stop:
 ```bash

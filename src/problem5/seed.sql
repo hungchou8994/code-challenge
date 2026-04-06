@@ -1,12 +1,17 @@
 -- ============================================================
 -- SEED DATA — Team Productivity Tracker
 -- ============================================================
+-- Run once after `docker compose up --build`:
+--   docker exec -i <db-container> psql -U postgres -d productivity_tracker < seed.sql
+--
+-- Safe to re-run: TRUNCATE at the top clears all data first.
+-- ============================================================
 
 -- Clean up existing data (order matters for FK)
 TRUNCATE TABLE score_events, productivity_scores, tasks, users RESTART IDENTITY CASCADE;
 
 -- ============================================================
--- USERS (6 team members across 3 departments)
+-- USERS (6 core team members across 3 departments)
 -- ============================================================
 INSERT INTO users (id, name, email, department, created_at, updated_at) VALUES
   ('u1', 'Alice Nguyen',   'alice@example.com',   'Engineering',  NOW() - INTERVAL '30 days', NOW()),
@@ -17,7 +22,7 @@ INSERT INTO users (id, name, email, department, created_at, updated_at) VALUES
   ('u6', 'Frank Vo',       'frank@example.com',   'Marketing',    NOW() - INTERVAL '10 days', NOW());
 
 -- ============================================================
--- TASKS
+-- TASKS (core set)
 -- Mix of TODO / IN_PROGRESS / DONE, all 3 priorities
 -- ============================================================
 INSERT INTO tasks (id, title, description, status, priority, assignee_id, due_date, created_at, updated_at) VALUES
@@ -49,18 +54,18 @@ INSERT INTO tasks (id, title, description, status, priority, assignee_id, due_da
   ('t20', 'Accessibility audit',           'Ensure WCAG 2.1 AA compliance across all pages',  'TODO',        'LOW',    NULL, NOW() + INTERVAL '30 days', NOW(),                       NOW());
 
 -- ============================================================
--- SCORE EVENTS (for each DONE task)
+-- SCORE EVENTS for core DONE tasks
 -- Scoring: LOW=5, MEDIUM=10, HIGH=20; early bonus=+5, late penalty=-3
--- t1  HIGH  early (due was -2d, done -2d = on time, but created early) => 20+5=25
--- t2  MEDIUM late (due -5d, done -5d on time)                          => 10
--- t3  MEDIUM on time                                                    => 10
--- t4  HIGH  early                                                       => 20+5=25
--- t5  HIGH  early (due +5d, done already)                              => 20+5=25
--- t6  HIGH  early                                                       => 20+5=25
--- t7  MEDIUM on time                                                    => 10
--- t8  LOW   on time                                                     => 5
--- t9  LOW   on time                                                     => 5
--- t10 HIGH  early                                                       => 20+5=25
+-- t1  HIGH  early => 20+5=25
+-- t2  MEDIUM on time => 10
+-- t3  MEDIUM on time => 10
+-- t4  HIGH  early => 20+5=25
+-- t5  HIGH  early (due +5d, already done) => 20+5=25
+-- t6  HIGH  early => 20+5=25
+-- t7  MEDIUM on time => 10
+-- t8  LOW   on time => 5
+-- t9  LOW   on time => 5
+-- t10 HIGH  early => 20+5=25
 -- ============================================================
 INSERT INTO score_events (id, user_id, task_id, points, bonus, penalty, total_awarded, created_at) VALUES
   ('se1',  'u1', 't1',  20, 5, 0, 25, NOW() - INTERVAL '2 days'),
@@ -75,7 +80,7 @@ INSERT INTO score_events (id, user_id, task_id, points, bonus, penalty, total_aw
   ('se10', 'u1', 't10', 20, 5, 0, 25, NOW() - INTERVAL '3 days');
 
 -- ============================================================
--- PRODUCTIVITY SCORES (aggregate per user)
+-- PRODUCTIVITY SCORES (aggregate per core user)
 -- u1: se1(25) + se4(25) + se10(25) = 75, 3 tasks
 -- u2: se3(10) + se7(10)            = 20, 2 tasks
 -- u3: se2(10) + se6(25)            = 35, 2 tasks
@@ -90,3 +95,464 @@ INSERT INTO productivity_scores (id, user_id, total_score, tasks_completed, upda
   ('ps4', 'u4',  5, 1, NOW()),
   ('ps5', 'u5', 30, 2, NOW()),
   ('ps6', 'u6',  0, 0, NOW());
+
+-- ============================================================
+-- BULK DATA — 100 extra users + 300 extra tasks
+-- ============================================================
+
+-- -----------------------------------------------
+-- 100 USERS
+-- -----------------------------------------------
+INSERT INTO users (id, name, email, department, created_at, updated_at) VALUES
+('u10','Liam Johnson','liam.johnson@example.com','Engineering',NOW()-INTERVAL '90 days',NOW()),
+('u11','Olivia Smith','olivia.smith@example.com','Design',NOW()-INTERVAL '88 days',NOW()),
+('u12','Noah Williams','noah.williams@example.com','Marketing',NOW()-INTERVAL '86 days',NOW()),
+('u13','Emma Brown','emma.brown@example.com','Engineering',NOW()-INTERVAL '85 days',NOW()),
+('u14','Oliver Jones','oliver.jones@example.com','HR',NOW()-INTERVAL '84 days',NOW()),
+('u15','Ava Garcia','ava.garcia@example.com','Design',NOW()-INTERVAL '83 days',NOW()),
+('u16','Elijah Martinez','elijah.martinez@example.com','Engineering',NOW()-INTERVAL '82 days',NOW()),
+('u17','Sophia Anderson','sophia.anderson@example.com','Marketing',NOW()-INTERVAL '81 days',NOW()),
+('u18','Lucas Taylor','lucas.taylor@example.com','HR',NOW()-INTERVAL '80 days',NOW()),
+('u19','Isabella Thomas','isabella.thomas@example.com','Engineering',NOW()-INTERVAL '79 days',NOW()),
+('u20','Mason Hernandez','mason.hernandez@example.com','Design',NOW()-INTERVAL '78 days',NOW()),
+('u21','Mia Moore','mia.moore@example.com','Marketing',NOW()-INTERVAL '77 days',NOW()),
+('u22','Ethan Jackson','ethan.jackson@example.com','Engineering',NOW()-INTERVAL '76 days',NOW()),
+('u23','Amelia Martin','amelia.martin@example.com','HR',NOW()-INTERVAL '75 days',NOW()),
+('u24','James Lee','james.lee@example.com','Design',NOW()-INTERVAL '74 days',NOW()),
+('u25','Harper Perez','harper.perez@example.com','Engineering',NOW()-INTERVAL '73 days',NOW()),
+('u26','Benjamin Thompson','benjamin.thompson@example.com','Marketing',NOW()-INTERVAL '72 days',NOW()),
+('u27','Evelyn White','evelyn.white@example.com','Design',NOW()-INTERVAL '71 days',NOW()),
+('u28','Henry Harris','henry.harris@example.com','Engineering',NOW()-INTERVAL '70 days',NOW()),
+('u29','Abigail Sanchez','abigail.sanchez@example.com','HR',NOW()-INTERVAL '69 days',NOW()),
+('u30','Alexander Clark','alexander.clark@example.com','Marketing',NOW()-INTERVAL '68 days',NOW()),
+('u31','Emily Ramirez','emily.ramirez@example.com','Engineering',NOW()-INTERVAL '67 days',NOW()),
+('u32','Michael Lewis','michael.lewis@example.com','Design',NOW()-INTERVAL '66 days',NOW()),
+('u33','Elizabeth Robinson','elizabeth.robinson@example.com','HR',NOW()-INTERVAL '65 days',NOW()),
+('u34','Daniel Walker','daniel.walker@example.com','Engineering',NOW()-INTERVAL '64 days',NOW()),
+('u35','Sofia Young','sofia.young@example.com','Marketing',NOW()-INTERVAL '63 days',NOW()),
+('u36','Matthew Allen','matthew.allen@example.com','Design',NOW()-INTERVAL '62 days',NOW()),
+('u37','Avery King','avery.king@example.com','Engineering',NOW()-INTERVAL '61 days',NOW()),
+('u38','Jackson Wright','jackson.wright@example.com','HR',NOW()-INTERVAL '60 days',NOW()),
+('u39','Scarlett Scott','scarlett.scott@example.com','Marketing',NOW()-INTERVAL '59 days',NOW()),
+('u40','Sebastian Torres','sebastian.torres@example.com','Engineering',NOW()-INTERVAL '58 days',NOW()),
+('u41','Aria Nguyen','aria.nguyen@example.com','Design',NOW()-INTERVAL '57 days',NOW()),
+('u42','Jack Hill','jack.hill@example.com','HR',NOW()-INTERVAL '56 days',NOW()),
+('u43','Luna Flores','luna.flores@example.com','Engineering',NOW()-INTERVAL '55 days',NOW()),
+('u44','Owen Green','owen.green@example.com','Marketing',NOW()-INTERVAL '54 days',NOW()),
+('u45','Chloe Adams','chloe.adams@example.com','Design',NOW()-INTERVAL '53 days',NOW()),
+('u46','Wyatt Nelson','wyatt.nelson@example.com','Engineering',NOW()-INTERVAL '52 days',NOW()),
+('u47','Penelope Carter','penelope.carter@example.com','HR',NOW()-INTERVAL '51 days',NOW()),
+('u48','Gabriel Mitchell','gabriel.mitchell@example.com','Marketing',NOW()-INTERVAL '50 days',NOW()),
+('u49','Riley Perez','riley.perez@example.com','Engineering',NOW()-INTERVAL '49 days',NOW()),
+('u50','Zoey Roberts','zoey.roberts@example.com','Design',NOW()-INTERVAL '48 days',NOW()),
+('u51','Carter Turner','carter.turner@example.com','HR',NOW()-INTERVAL '47 days',NOW()),
+('u52','Nora Phillips','nora.phillips@example.com','Engineering',NOW()-INTERVAL '46 days',NOW()),
+('u53','Anthony Campbell','anthony.campbell@example.com','Marketing',NOW()-INTERVAL '45 days',NOW()),
+('u54','Lily Parker','lily.parker@example.com','Design',NOW()-INTERVAL '44 days',NOW()),
+('u55','Dylan Evans','dylan.evans@example.com','Engineering',NOW()-INTERVAL '43 days',NOW()),
+('u56','Hannah Edwards','hannah.edwards@example.com','HR',NOW()-INTERVAL '42 days',NOW()),
+('u57','Isaac Collins','isaac.collins@example.com','Marketing',NOW()-INTERVAL '41 days',NOW()),
+('u58','Addison Stewart','addison.stewart@example.com','Engineering',NOW()-INTERVAL '40 days',NOW()),
+('u59','Joshua Sanchez','joshua.sanchez@example.com','Design',NOW()-INTERVAL '39 days',NOW()),
+('u60','Eleanor Morris','eleanor.morris@example.com','HR',NOW()-INTERVAL '38 days',NOW()),
+('u61','Andrew Rogers','andrew.rogers@example.com','Engineering',NOW()-INTERVAL '37 days',NOW()),
+('u62','Leah Reed','leah.reed@example.com','Marketing',NOW()-INTERVAL '36 days',NOW()),
+('u63','Ryan Cook','ryan.cook@example.com','Design',NOW()-INTERVAL '35 days',NOW()),
+('u64','Lillian Morgan','lillian.morgan@example.com','HR',NOW()-INTERVAL '34 days',NOW()),
+('u65','Nathan Bell','nathan.bell@example.com','Engineering',NOW()-INTERVAL '33 days',NOW()),
+('u66','Aubrey Murphy','aubrey.murphy@example.com','Marketing',NOW()-INTERVAL '32 days',NOW()),
+('u67','Christian Bailey','christian.bailey@example.com','Design',NOW()-INTERVAL '31 days',NOW()),
+('u68','Savannah Rivera','savannah.rivera@example.com','Engineering',NOW()-INTERVAL '30 days',NOW()),
+('u69','Jonathan Cooper','jonathan.cooper@example.com','HR',NOW()-INTERVAL '29 days',NOW()),
+('u70','Brooklyn Richardson','brooklyn.richardson@example.com','Marketing',NOW()-INTERVAL '28 days',NOW()),
+('u71','Aaron Cox','aaron.cox@example.com','Engineering',NOW()-INTERVAL '27 days',NOW()),
+('u72','Audrey Howard','audrey.howard@example.com','Design',NOW()-INTERVAL '26 days',NOW()),
+('u73','Dominic Ward','dominic.ward@example.com','HR',NOW()-INTERVAL '25 days',NOW()),
+('u74','Bella Torres','bella.torres@example.com','Marketing',NOW()-INTERVAL '24 days',NOW()),
+('u75','Levi Peterson','levi.peterson@example.com','Engineering',NOW()-INTERVAL '23 days',NOW()),
+('u76','Claire Gray','claire.gray@example.com','Design',NOW()-INTERVAL '22 days',NOW()),
+('u77','Caleb Ramirez','caleb.ramirez@example.com','HR',NOW()-INTERVAL '21 days',NOW()),
+('u78','Skylar James','skylar.james@example.com','Marketing',NOW()-INTERVAL '20 days',NOW()),
+('u79','Hunter Watson','hunter.watson@example.com','Engineering',NOW()-INTERVAL '19 days',NOW()),
+('u80','Layla Brooks','layla.brooks@example.com','Design',NOW()-INTERVAL '18 days',NOW()),
+('u81','Eli Kelly','eli.kelly@example.com','HR',NOW()-INTERVAL '17 days',NOW()),
+('u82','Anna Sanders','anna.sanders@example.com','Marketing',NOW()-INTERVAL '16 days',NOW()),
+('u83','Isaiah Price','isaiah.price@example.com','Engineering',NOW()-INTERVAL '15 days',NOW()),
+('u84','Violet Bennett','violet.bennett@example.com','Design',NOW()-INTERVAL '14 days',NOW()),
+('u85','Aaron Wood','aaron.wood@example.com','HR',NOW()-INTERVAL '13 days',NOW()),
+('u86','Natalie Barnes','natalie.barnes@example.com','Marketing',NOW()-INTERVAL '12 days',NOW()),
+('u87','Jeremiah Ross','jeremiah.ross@example.com','Engineering',NOW()-INTERVAL '11 days',NOW()),
+('u88','Sofia Henderson','sofia.henderson@example.com','Design',NOW()-INTERVAL '10 days',NOW()),
+('u89','Adam Coleman','adam.coleman@example.com','HR',NOW()-INTERVAL '9 days',NOW()),
+('u90','Alice Jenkins','alice.jenkins@example.com','Marketing',NOW()-INTERVAL '8 days',NOW()),
+('u91','Jose Perry','jose.perry@example.com','Engineering',NOW()-INTERVAL '7 days',NOW()),
+('u92','Maya Powell','maya.powell@example.com','Design',NOW()-INTERVAL '7 days',NOW()),
+('u93','Kevin Long','kevin.long@example.com','HR',NOW()-INTERVAL '6 days',NOW()),
+('u94','Zoe Patterson','zoe.patterson@example.com','Marketing',NOW()-INTERVAL '6 days',NOW()),
+('u95','Kyle Hughes','kyle.hughes@example.com','Engineering',NOW()-INTERVAL '5 days',NOW()),
+('u96','Stella Flores','stella.flores@example.com','Design',NOW()-INTERVAL '5 days',NOW()),
+('u97','Bryan Washington','bryan.washington@example.com','HR',NOW()-INTERVAL '4 days',NOW()),
+('u98','Nadia Butler','nadia.butler@example.com','Marketing',NOW()-INTERVAL '4 days',NOW()),
+('u99','Marcus Simmons','marcus.simmons@example.com','Engineering',NOW()-INTERVAL '3 days',NOW()),
+('u100','Grace Foster','grace.foster@example.com','Design',NOW()-INTERVAL '3 days',NOW()),
+('u101','Eric Gonzales','eric.gonzales@example.com','HR',NOW()-INTERVAL '2 days',NOW()),
+('u102','Jasmine Bryant','jasmine.bryant@example.com','Marketing',NOW()-INTERVAL '2 days',NOW()),
+('u103','Victor Alexander','victor.alexander@example.com','Engineering',NOW()-INTERVAL '1 day',NOW()),
+('u104','Diana Russell','diana.russell@example.com','Design',NOW()-INTERVAL '1 day',NOW()),
+('u105','Samuel Griffin','samuel.griffin@example.com','HR',NOW()-INTERVAL '1 day',NOW()),
+('u106','Kylie Diaz','kylie.diaz@example.com','Marketing',NOW(),NOW()),
+('u107','Patrick Hayes','patrick.hayes@example.com','Engineering',NOW(),NOW()),
+('u108','Melissa Myers','melissa.hayes@example.com','Design',NOW(),NOW()),
+('u109','Roger Ford','roger.ford@example.com','HR',NOW(),NOW());
+
+-- -----------------------------------------------
+-- 300 TASKS (mix of TODO/IN_PROGRESS/DONE, all priorities)
+-- assigned to the full user pool (u1–u109)
+-- -----------------------------------------------
+INSERT INTO tasks (id, title, description, status, priority, assignee_id, due_date, created_at, updated_at) VALUES
+('tx001','Refactor auth module','Clean up authentication code and add tests','DONE','HIGH','u10',NOW()-INTERVAL '5 days',NOW()-INTERVAL '30 days',NOW()-INTERVAL '5 days'),
+('tx002','Design onboarding screens','Create UI mockups for the onboarding flow','DONE','MEDIUM','u11',NOW()-INTERVAL '3 days',NOW()-INTERVAL '28 days',NOW()-INTERVAL '3 days'),
+('tx003','Write unit tests for API','Achieve 80% test coverage on REST API','DONE','HIGH','u13',NOW()-INTERVAL '2 days',NOW()-INTERVAL '25 days',NOW()-INTERVAL '2 days'),
+('tx004','Create content calendar','Plan social posts for next quarter','DONE','MEDIUM','u12',NOW()-INTERVAL '4 days',NOW()-INTERVAL '22 days',NOW()-INTERVAL '4 days'),
+('tx005','HR policy update','Update employee handbook for 2026','DONE','LOW','u14',NOW()-INTERVAL '6 days',NOW()-INTERVAL '20 days',NOW()-INTERVAL '6 days'),
+('tx006','Redesign logo','Create new brand logo variants','DONE','HIGH','u15',NOW()-INTERVAL '1 day',NOW()-INTERVAL '18 days',NOW()-INTERVAL '1 day'),
+('tx007','Optimize database indexes','Add indexes to slow queries','DONE','HIGH','u16',NOW()-INTERVAL '2 days',NOW()-INTERVAL '16 days',NOW()-INTERVAL '2 days'),
+('tx008','Launch email campaign','Send product update newsletter','DONE','MEDIUM','u17',NOW()-INTERVAL '3 days',NOW()-INTERVAL '14 days',NOW()-INTERVAL '3 days'),
+('tx009','Conduct performance reviews','Q1 employee performance evaluations','DONE','MEDIUM','u18',NOW()-INTERVAL '5 days',NOW()-INTERVAL '12 days',NOW()-INTERVAL '5 days'),
+('tx010','Build REST API endpoints','Create CRUD endpoints for products','DONE','HIGH','u19',NOW()-INTERVAL '1 day',NOW()-INTERVAL '10 days',NOW()-INTERVAL '1 day'),
+('tx011','Create icon library','Design 100 icons for UI kit','DONE','MEDIUM','u20',NOW()-INTERVAL '4 days',NOW()-INTERVAL '28 days',NOW()-INTERVAL '4 days'),
+('tx012','SEO keyword research','Identify top 50 keywords for blog','DONE','LOW','u21',NOW()-INTERVAL '7 days',NOW()-INTERVAL '26 days',NOW()-INTERVAL '7 days'),
+('tx013','Setup monitoring alerts','Configure PagerDuty for production alerts','DONE','HIGH','u22',NOW()-INTERVAL '2 days',NOW()-INTERVAL '24 days',NOW()-INTERVAL '2 days'),
+('tx014','Employee onboarding checklist','Create checklist for new hires','DONE','LOW','u23',NOW()-INTERVAL '8 days',NOW()-INTERVAL '22 days',NOW()-INTERVAL '8 days'),
+('tx015','Implement dark mode toggle','Add theme switch to settings','DONE','MEDIUM','u25',NOW()-INTERVAL '3 days',NOW()-INTERVAL '20 days',NOW()-INTERVAL '3 days'),
+('tx016','Create brand guidelines doc','Document brand colors, fonts, and usage','DONE','MEDIUM','u24',NOW()-INTERVAL '5 days',NOW()-INTERVAL '18 days',NOW()-INTERVAL '5 days'),
+('tx017','A/B test landing page','Test two versions of hero section','DONE','HIGH','u26',NOW()-INTERVAL '1 day',NOW()-INTERVAL '16 days',NOW()-INTERVAL '1 day'),
+('tx018','Update privacy policy','GDPR compliance review and update','DONE','HIGH','u28',NOW()-INTERVAL '2 days',NOW()-INTERVAL '14 days',NOW()-INTERVAL '2 days'),
+('tx019','Build notification service','Push notifications for mobile app','DONE','HIGH','u31',NOW()-INTERVAL '3 days',NOW()-INTERVAL '12 days',NOW()-INTERVAL '3 days'),
+('tx020','Competitor analysis','Research 10 top competitors','DONE','MEDIUM','u30',NOW()-INTERVAL '6 days',NOW()-INTERVAL '10 days',NOW()-INTERVAL '6 days'),
+('tx021','Code review guidelines','Document code review best practices','DONE','LOW','u34',NOW()-INTERVAL '9 days',NOW()-INTERVAL '30 days',NOW()-INTERVAL '9 days'),
+('tx022','Create product video','60-second product demo video','DONE','HIGH','u35',NOW()-INTERVAL '2 days',NOW()-INTERVAL '28 days',NOW()-INTERVAL '2 days'),
+('tx023','Fix payment bug','Resolve double-charge issue in checkout','DONE','HIGH','u37',NOW()-INTERVAL '1 day',NOW()-INTERVAL '26 days',NOW()-INTERVAL '1 day'),
+('tx024','User research interviews','Conduct 10 user interviews','DONE','MEDIUM','u40',NOW()-INTERVAL '4 days',NOW()-INTERVAL '24 days',NOW()-INTERVAL '4 days'),
+('tx025','Write API docs','Document all v2 API endpoints','DONE','MEDIUM','u43',NOW()-INTERVAL '5 days',NOW()-INTERVAL '22 days',NOW()-INTERVAL '5 days'),
+('tx026','Redesign checkout flow','Simplify 3-step checkout to 1-step','DONE','HIGH','u46',NOW()-INTERVAL '2 days',NOW()-INTERVAL '20 days',NOW()-INTERVAL '2 days'),
+('tx027','Set up staging environment','Configure staging server and CI/CD','DONE','HIGH','u49',NOW()-INTERVAL '3 days',NOW()-INTERVAL '18 days',NOW()-INTERVAL '3 days'),
+('tx028','Create FAQ page','Write answers for top 30 user questions','DONE','LOW','u52',NOW()-INTERVAL '7 days',NOW()-INTERVAL '16 days',NOW()-INTERVAL '7 days'),
+('tx029','Implement file upload','S3 integration for user file uploads','DONE','HIGH','u55',NOW()-INTERVAL '2 days',NOW()-INTERVAL '14 days',NOW()-INTERVAL '2 days'),
+('tx030','Write blog post','Article on product best practices','DONE','LOW','u58',NOW()-INTERVAL '8 days',NOW()-INTERVAL '12 days',NOW()-INTERVAL '8 days'),
+('tx031','Fix mobile layout issues','Responsive fixes for iOS Safari','DONE','MEDIUM','u61',NOW()-INTERVAL '4 days',NOW()-INTERVAL '10 days',NOW()-INTERVAL '4 days'),
+('tx032','Create sales deck','PowerPoint for enterprise sales team','DONE','MEDIUM','u62',NOW()-INTERVAL '5 days',NOW()-INTERVAL '30 days',NOW()-INTERVAL '5 days'),
+('tx033','Database backup automation','Schedule nightly DB backups to S3','DONE','HIGH','u65',NOW()-INTERVAL '1 day',NOW()-INTERVAL '28 days',NOW()-INTERVAL '1 day'),
+('tx034','Update team org chart','Reflect Q1 restructure in org chart','DONE','LOW','u64',NOW()-INTERVAL '10 days',NOW()-INTERVAL '26 days',NOW()-INTERVAL '10 days'),
+('tx035','Implement search feature','Full-text search with Elasticsearch','DONE','HIGH','u68',NOW()-INTERVAL '2 days',NOW()-INTERVAL '24 days',NOW()-INTERVAL '2 days'),
+('tx036','Design email templates','HTML templates for transactional emails','DONE','MEDIUM','u72',NOW()-INTERVAL '3 days',NOW()-INTERVAL '22 days',NOW()-INTERVAL '3 days'),
+('tx037','Podcast episode planning','Plan 4 podcast episodes for Q2','DONE','LOW','u66',NOW()-INTERVAL '9 days',NOW()-INTERVAL '20 days',NOW()-INTERVAL '9 days'),
+('tx038','Security audit','Pen testing and vulnerability assessment','DONE','HIGH','u71',NOW()-INTERVAL '2 days',NOW()-INTERVAL '18 days',NOW()-INTERVAL '2 days'),
+('tx039','Salary band review','Update compensation bands for 2026','DONE','MEDIUM','u73',NOW()-INTERVAL '6 days',NOW()-INTERVAL '16 days',NOW()-INTERVAL '6 days'),
+('tx040','Implement OAuth2','Google and GitHub login integration','DONE','HIGH','u75',NOW()-INTERVAL '1 day',NOW()-INTERVAL '14 days',NOW()-INTERVAL '1 day'),
+('tx041','Create style guide','Document component library styles','DONE','MEDIUM','u76',NOW()-INTERVAL '4 days',NOW()-INTERVAL '12 days',NOW()-INTERVAL '4 days'),
+('tx042','Launch referral program','Build referral tracking and rewards','DONE','HIGH','u78',NOW()-INTERVAL '2 days',NOW()-INTERVAL '10 days',NOW()-INTERVAL '2 days'),
+('tx043','Migrate to PostgreSQL 17','Upgrade from PG16 to PG17','DONE','HIGH','u79',NOW()-INTERVAL '3 days',NOW()-INTERVAL '30 days',NOW()-INTERVAL '3 days'),
+('tx044','Write case studies','Document 3 customer success stories','DONE','MEDIUM','u82',NOW()-INTERVAL '5 days',NOW()-INTERVAL '28 days',NOW()-INTERVAL '5 days'),
+('tx045','Fix CSV export bug','Special characters corrupting CSV files','DONE','MEDIUM','u83',NOW()-INTERVAL '4 days',NOW()-INTERVAL '26 days',NOW()-INTERVAL '4 days'),
+('tx046','Design new dashboard','Revamp main dashboard with new KPIs','DONE','HIGH','u84',NOW()-INTERVAL '1 day',NOW()-INTERVAL '24 days',NOW()-INTERVAL '1 day'),
+('tx047','Setup CDN','Configure CloudFront for static assets','DONE','MEDIUM','u87',NOW()-INTERVAL '3 days',NOW()-INTERVAL '22 days',NOW()-INTERVAL '3 days'),
+('tx048','Interview candidates','Screen 20 engineering candidates','DONE','MEDIUM','u85',NOW()-INTERVAL '6 days',NOW()-INTERVAL '20 days',NOW()-INTERVAL '6 days'),
+('tx049','Launch affiliate program','Build partner tracking system','DONE','HIGH','u86',NOW()-INTERVAL '2 days',NOW()-INTERVAL '18 days',NOW()-INTERVAL '2 days'),
+('tx050','Implement rate limiting','API rate limiting with Redis','DONE','HIGH','u91',NOW()-INTERVAL '1 day',NOW()-INTERVAL '16 days',NOW()-INTERVAL '1 day'),
+-- IN_PROGRESS batch
+('tx051','Build analytics dashboard','Real-time metrics with charts','IN_PROGRESS','HIGH','u10',NOW()+INTERVAL '7 days',NOW()-INTERVAL '5 days',NOW()),
+('tx052','Design mobile app screens','iOS and Android UI designs','IN_PROGRESS','HIGH','u11',NOW()+INTERVAL '10 days',NOW()-INTERVAL '4 days',NOW()),
+('tx053','Migrate legacy codebase','Move from PHP to Node.js','IN_PROGRESS','HIGH','u13',NOW()+INTERVAL '14 days',NOW()-INTERVAL '6 days',NOW()),
+('tx054','Social media strategy Q3','Plan social channels for Q3','IN_PROGRESS','MEDIUM','u12',NOW()+INTERVAL '8 days',NOW()-INTERVAL '3 days',NOW()),
+('tx055','Benefits enrollment system','Employee benefits portal','IN_PROGRESS','MEDIUM','u14',NOW()+INTERVAL '12 days',NOW()-INTERVAL '5 days',NOW()),
+('tx056','Redesign pricing page','A/B test new pricing layout','IN_PROGRESS','HIGH','u15',NOW()+INTERVAL '5 days',NOW()-INTERVAL '2 days',NOW()),
+('tx057','Implement GraphQL API','Add GraphQL layer to REST backend','IN_PROGRESS','HIGH','u16',NOW()+INTERVAL '9 days',NOW()-INTERVAL '4 days',NOW()),
+('tx058','Influencer outreach','Contact 50 relevant influencers','IN_PROGRESS','MEDIUM','u17',NOW()+INTERVAL '11 days',NOW()-INTERVAL '3 days',NOW()),
+('tx059','360 review system','Build peer review workflow','IN_PROGRESS','MEDIUM','u18',NOW()+INTERVAL '15 days',NOW()-INTERVAL '6 days',NOW()),
+('tx060','Build subscription billing','Stripe subscription integration','IN_PROGRESS','HIGH','u19',NOW()+INTERVAL '6 days',NOW()-INTERVAL '2 days',NOW()),
+('tx061','Redesign component library','Migrate to new design tokens','IN_PROGRESS','HIGH','u20',NOW()+INTERVAL '8 days',NOW()-INTERVAL '4 days',NOW()),
+('tx062','Content partnership deals','Negotiate 5 content partnerships','IN_PROGRESS','MEDIUM','u21',NOW()+INTERVAL '13 days',NOW()-INTERVAL '5 days',NOW()),
+('tx063','Implement WebSocket support','Real-time features for chat','IN_PROGRESS','HIGH','u22',NOW()+INTERVAL '7 days',NOW()-INTERVAL '3 days',NOW()),
+('tx064','Training needs assessment','Identify skill gaps across teams','IN_PROGRESS','LOW','u23',NOW()+INTERVAL '20 days',NOW()-INTERVAL '4 days',NOW()),
+('tx065','Build reporting module','Custom report builder with export','IN_PROGRESS','HIGH','u25',NOW()+INTERVAL '9 days',NOW()-INTERVAL '5 days',NOW()),
+('tx066','Create motion design assets','Animations for marketing site','IN_PROGRESS','MEDIUM','u24',NOW()+INTERVAL '11 days',NOW()-INTERVAL '3 days',NOW()),
+('tx067','PPC campaign setup','Google Ads campaign for product launch','IN_PROGRESS','HIGH','u26',NOW()+INTERVAL '4 days',NOW()-INTERVAL '2 days',NOW()),
+('tx068','Implement 2FA','Two-factor authentication for accounts','IN_PROGRESS','HIGH','u28',NOW()+INTERVAL '6 days',NOW()-INTERVAL '3 days',NOW()),
+('tx069','Build data pipeline','ETL pipeline for analytics warehouse','IN_PROGRESS','HIGH','u31',NOW()+INTERVAL '10 days',NOW()-INTERVAL '5 days',NOW()),
+('tx070','Webinar production','Host product demo webinar','IN_PROGRESS','MEDIUM','u30',NOW()+INTERVAL '15 days',NOW()-INTERVAL '4 days',NOW()),
+('tx071','Refactor frontend state','Migrate from Redux to Zustand','IN_PROGRESS','MEDIUM','u34',NOW()+INTERVAL '8 days',NOW()-INTERVAL '3 days',NOW()),
+('tx072','Trade show booth design','Design booth for TechConf 2026','IN_PROGRESS','MEDIUM','u35',NOW()+INTERVAL '12 days',NOW()-INTERVAL '5 days',NOW()),
+('tx073','Implement caching layer','Redis caching for API responses','IN_PROGRESS','HIGH','u37',NOW()+INTERVAL '5 days',NOW()-INTERVAL '2 days',NOW()),
+('tx074','Customer advisory board','Recruit 10 customers for CAB','IN_PROGRESS','LOW','u40',NOW()+INTERVAL '25 days',NOW()-INTERVAL '6 days',NOW()),
+('tx075','Build admin panel','Internal admin CRUD interface','IN_PROGRESS','HIGH','u43',NOW()+INTERVAL '7 days',NOW()-INTERVAL '4 days',NOW()),
+-- TODO batch
+('tx076','Implement AI recommendations','ML-based product recommendations','TODO','HIGH','u46',NOW()+INTERVAL '20 days',NOW()-INTERVAL '2 days',NOW()),
+('tx077','Create video tutorials','5 product tutorial videos','TODO','MEDIUM','u49',NOW()+INTERVAL '25 days',NOW()-INTERVAL '1 day',NOW()),
+('tx078','Setup disaster recovery','DR plan and runbooks','TODO','HIGH','u52',NOW()+INTERVAL '30 days',NOW()-INTERVAL '3 days',NOW()),
+('tx079','Launch loyalty program','Points and rewards system','TODO','HIGH','u55',NOW()+INTERVAL '18 days',NOW()-INTERVAL '2 days',NOW()),
+('tx080','Implement GDPR tools','Data export and deletion APIs','TODO','HIGH','u58',NOW()+INTERVAL '22 days',NOW()-INTERVAL '1 day',NOW()),
+('tx081','Redesign onboarding','New user onboarding flow','TODO','MEDIUM','u61',NOW()+INTERVAL '15 days',NOW()-INTERVAL '3 days',NOW()),
+('tx082','Build mobile app MVP','React Native MVP for iOS','TODO','HIGH','u65',NOW()+INTERVAL '45 days',NOW()-INTERVAL '2 days',NOW()),
+('tx083','Create investor deck','Series A pitch presentation','TODO','HIGH','u68',NOW()+INTERVAL '12 days',NOW()-INTERVAL '1 day',NOW()),
+('tx084','Implement audit logs','Track all user actions','TODO','MEDIUM','u71',NOW()+INTERVAL '20 days',NOW()-INTERVAL '2 days',NOW()),
+('tx085','Diversity hiring initiative','Partner with 3 diversity orgs','TODO','MEDIUM','u73',NOW()+INTERVAL '30 days',NOW()-INTERVAL '3 days',NOW()),
+('tx086','Build API marketplace','Public API partner portal','TODO','HIGH','u75',NOW()+INTERVAL '35 days',NOW()-INTERVAL '2 days',NOW()),
+('tx087','Create design system v2','Next generation component system','TODO','HIGH','u76',NOW()+INTERVAL '40 days',NOW()-INTERVAL '1 day',NOW()),
+('tx088','Launch product hunt','Product Hunt launch campaign','TODO','HIGH','u78',NOW()+INTERVAL '10 days',NOW()-INTERVAL '2 days',NOW()),
+('tx089','Migrate to microservices','Break monolith into services','TODO','HIGH','u79',NOW()+INTERVAL '60 days',NOW()-INTERVAL '3 days',NOW()),
+('tx090','Write technical whitepaper','Architecture decision document','TODO','MEDIUM','u83',NOW()+INTERVAL '25 days',NOW()-INTERVAL '2 days',NOW()),
+('tx091','Build customer portal','Self-service account management','TODO','HIGH','u87',NOW()+INTERVAL '28 days',NOW()-INTERVAL '1 day',NOW()),
+('tx092','Implement SSO','SAML/OIDC single sign-on','TODO','HIGH','u91',NOW()+INTERVAL '22 days',NOW()-INTERVAL '2 days',NOW()),
+('tx093','Annual company survey','Employee satisfaction survey','TODO','LOW','u85',NOW()+INTERVAL '14 days',NOW()-INTERVAL '1 day',NOW()),
+('tx094','Build integration marketplace','Third-party app integrations','TODO','HIGH','u95',NOW()+INTERVAL '50 days',NOW()-INTERVAL '3 days',NOW()),
+('tx095','Create demo environment','Sandboxed demo account','TODO','MEDIUM','u99',NOW()+INTERVAL '18 days',NOW()-INTERVAL '2 days',NOW()),
+('tx096','Implement feature flags','LaunchDarkly integration','TODO','MEDIUM','u103',NOW()+INTERVAL '15 days',NOW()-INTERVAL '1 day',NOW()),
+('tx097','User permission system','Role-based access control','TODO','HIGH','u107',NOW()+INTERVAL '20 days',NOW()-INTERVAL '2 days',NOW()),
+('tx098','Brand photography shoot','Product and team photos','TODO','LOW','u100',NOW()+INTERVAL '30 days',NOW()-INTERVAL '1 day',NOW()),
+('tx099','Implement data export','CSV and PDF export for reports','TODO','MEDIUM','u92',NOW()+INTERVAL '17 days',NOW()-INTERVAL '2 days',NOW()),
+('tx100','Build status page','Public uptime status page','TODO','MEDIUM','u96',NOW()+INTERVAL '12 days',NOW()-INTERVAL '1 day',NOW()),
+-- More DONE tasks spread across other users
+('tx101','Setup load balancer','HAProxy configuration for HA','DONE','HIGH','u32',NOW()-INTERVAL '3 days',NOW()-INTERVAL '25 days',NOW()-INTERVAL '3 days'),
+('tx102','Create press kit','Media assets and company bio','DONE','LOW','u33',NOW()-INTERVAL '7 days',NOW()-INTERVAL '23 days',NOW()-INTERVAL '7 days'),
+('tx103','Fix XSS vulnerability','Sanitize user input fields','DONE','HIGH','u36',NOW()-INTERVAL '1 day',NOW()-INTERVAL '21 days',NOW()-INTERVAL '1 day'),
+('tx104','Keynote presentation','Slides for industry conference','DONE','MEDIUM','u39',NOW()-INTERVAL '4 days',NOW()-INTERVAL '19 days',NOW()-INTERVAL '4 days'),
+('tx105','Implement pagination API','Cursor-based pagination for all lists','DONE','MEDIUM','u41',NOW()-INTERVAL '3 days',NOW()-INTERVAL '17 days',NOW()-INTERVAL '3 days'),
+('tx106','Create user personas','5 buyer persona documents','DONE','MEDIUM','u44',NOW()-INTERVAL '5 days',NOW()-INTERVAL '15 days',NOW()-INTERVAL '5 days'),
+('tx107','Build CSV importer','Bulk user import via CSV','DONE','HIGH','u47',NOW()-INTERVAL '2 days',NOW()-INTERVAL '13 days',NOW()-INTERVAL '2 days'),
+('tx108','Employee engagement survey','Quarterly pulse check','DONE','LOW','u51',NOW()-INTERVAL '9 days',NOW()-INTERVAL '11 days',NOW()-INTERVAL '9 days'),
+('tx109','Implement webhook system','Outbound webhooks for integrations','DONE','HIGH','u53',NOW()-INTERVAL '2 days',NOW()-INTERVAL '20 days',NOW()-INTERVAL '2 days'),
+('tx110','Product roadmap 2026','Plan and prioritize Q3-Q4 features','DONE','HIGH','u57',NOW()-INTERVAL '3 days',NOW()-INTERVAL '18 days',NOW()-INTERVAL '3 days'),
+('tx111','Setup error tracking','Sentry integration for all services','DONE','MEDIUM','u59',NOW()-INTERVAL '4 days',NOW()-INTERVAL '16 days',NOW()-INTERVAL '4 days'),
+('tx112','Rewrite test suite','Migrate from Jest to Vitest','DONE','MEDIUM','u63',NOW()-INTERVAL '5 days',NOW()-INTERVAL '14 days',NOW()-INTERVAL '5 days'),
+('tx113','Annual report design','Design 2025 annual report PDF','DONE','HIGH','u67',NOW()-INTERVAL '2 days',NOW()-INTERVAL '12 days',NOW()-INTERVAL '2 days'),
+('tx114','Build approval workflow','Multi-step approval for documents','DONE','HIGH','u69',NOW()-INTERVAL '1 day',NOW()-INTERVAL '10 days',NOW()-INTERVAL '1 day'),
+('tx115','Implement i18n','Internationalization for 5 languages','DONE','HIGH','u70',NOW()-INTERVAL '3 days',NOW()-INTERVAL '20 days',NOW()-INTERVAL '3 days'),
+('tx116','Create UX research plan','Usability testing methodology','DONE','MEDIUM','u74',NOW()-INTERVAL '6 days',NOW()-INTERVAL '18 days',NOW()-INTERVAL '6 days'),
+('tx117','Launch partner program','Channel partner onboarding','DONE','HIGH','u77',NOW()-INTERVAL '2 days',NOW()-INTERVAL '16 days',NOW()-INTERVAL '2 days'),
+('tx118','Implement data retention','Auto-delete old data per policy','DONE','HIGH','u80',NOW()-INTERVAL '3 days',NOW()-INTERVAL '14 days',NOW()-INTERVAL '3 days'),
+('tx119','Benefits benchmarking','Research market compensation','DONE','MEDIUM','u81',NOW()-INTERVAL '5 days',NOW()-INTERVAL '12 days',NOW()-INTERVAL '5 days'),
+('tx120','Build template library','50 pre-built report templates','DONE','MEDIUM','u88',NOW()-INTERVAL '4 days',NOW()-INTERVAL '10 days',NOW()-INTERVAL '4 days'),
+-- More IN_PROGRESS spread across other users
+('tx121','Revamp help center','Redesign knowledge base','IN_PROGRESS','MEDIUM','u32',NOW()+INTERVAL '14 days',NOW()-INTERVAL '3 days',NOW()),
+('tx122','Implement team workspaces','Multi-tenant workspace support','IN_PROGRESS','HIGH','u34',NOW()+INTERVAL '9 days',NOW()-INTERVAL '4 days',NOW()),
+('tx123','Customer health scoring','Churn prediction model','IN_PROGRESS','HIGH','u36',NOW()+INTERVAL '12 days',NOW()-INTERVAL '5 days',NOW()),
+('tx124','Redesign user profile','New profile page with activity feed','IN_PROGRESS','MEDIUM','u41',NOW()+INTERVAL '7 days',NOW()-INTERVAL '2 days',NOW()),
+('tx125','Podcast advertising campaign','Sponsor 3 tech podcasts','IN_PROGRESS','MEDIUM','u44',NOW()+INTERVAL '15 days',NOW()-INTERVAL '4 days',NOW()),
+('tx126','Compliance training','HIPAA and SOC2 training rollout','IN_PROGRESS','HIGH','u47',NOW()+INTERVAL '10 days',NOW()-INTERVAL '3 days',NOW()),
+('tx127','Build custom reports','Drag-and-drop report builder','IN_PROGRESS','HIGH','u53',NOW()+INTERVAL '8 days',NOW()-INTERVAL '5 days',NOW()),
+('tx128','Launch community forum','Discourse community setup','IN_PROGRESS','MEDIUM','u57',NOW()+INTERVAL '11 days',NOW()-INTERVAL '3 days',NOW()),
+('tx129','Implement Kubernetes','K8s migration from Docker Swarm','IN_PROGRESS','HIGH','u59',NOW()+INTERVAL '20 days',NOW()-INTERVAL '6 days',NOW()),
+('tx130','Brand refresh campaign','New look and feel rollout','IN_PROGRESS','HIGH','u63',NOW()+INTERVAL '6 days',NOW()-INTERVAL '2 days',NOW()),
+-- More TODO tasks
+('tx131','Build event tracking','Custom analytics events','TODO','MEDIUM','u33',NOW()+INTERVAL '22 days',NOW()-INTERVAL '2 days',NOW()),
+('tx132','Create chatbot','AI support chatbot integration','TODO','HIGH','u39',NOW()+INTERVAL '35 days',NOW()-INTERVAL '3 days',NOW()),
+('tx133','Implement smart search','NLP-powered search feature','TODO','HIGH','u42',NOW()+INTERVAL '28 days',NOW()-INTERVAL '2 days',NOW()),
+('tx134','Build recommendation engine','Collaborative filtering model','TODO','HIGH','u45',NOW()+INTERVAL '40 days',NOW()-INTERVAL '1 day',NOW()),
+('tx135','Create learning portal','Employee L&D platform','TODO','MEDIUM','u48',NOW()+INTERVAL '30 days',NOW()-INTERVAL '2 days',NOW()),
+('tx136','Redesign mobile nav','Bottom navigation bar for mobile','TODO','MEDIUM','u50',NOW()+INTERVAL '14 days',NOW()-INTERVAL '1 day',NOW()),
+('tx137','Implement SLA tracking','Customer SLA monitoring','TODO','HIGH','u54',NOW()+INTERVAL '20 days',NOW()-INTERVAL '2 days',NOW()),
+('tx138','Build invoice system','Generate and send PDF invoices','TODO','HIGH','u56',NOW()+INTERVAL '18 days',NOW()-INTERVAL '1 day',NOW()),
+('tx139','Launch beta program','Managed early-access program','TODO','MEDIUM','u60',NOW()+INTERVAL '15 days',NOW()-INTERVAL '2 days',NOW()),
+('tx140','Implement cron scheduler','Background job scheduling','TODO','MEDIUM','u62',NOW()+INTERVAL '12 days',NOW()-INTERVAL '1 day',NOW()),
+('tx141','Accessibility improvements','WCAG 2.2 compliance updates','TODO','HIGH','u66',NOW()+INTERVAL '25 days',NOW()-INTERVAL '2 days',NOW()),
+('tx142','Build team calendar','Shared calendar with availability','TODO','MEDIUM','u67',NOW()+INTERVAL '20 days',NOW()-INTERVAL '1 day',NOW()),
+('tx143','Implement dark mode','System-level dark mode support','TODO','LOW','u69',NOW()+INTERVAL '30 days',NOW()-INTERVAL '2 days',NOW()),
+('tx144','Create API SDK','Python and JS SDK for public API','TODO','HIGH','u70',NOW()+INTERVAL '35 days',NOW()-INTERVAL '3 days',NOW()),
+('tx145','Build approval chains','Configurable approval workflows','TODO','HIGH','u74',NOW()+INTERVAL '28 days',NOW()-INTERVAL '2 days',NOW()),
+('tx146','Implement e-signature','DocuSign integration for contracts','TODO','HIGH','u77',NOW()+INTERVAL '22 days',NOW()-INTERVAL '1 day',NOW()),
+('tx147','Create video library','Internal training video portal','TODO','MEDIUM','u81',NOW()+INTERVAL '30 days',NOW()-INTERVAL '2 days',NOW()),
+('tx148','Build payroll integration','Sync with ADP payroll system','TODO','HIGH','u82',NOW()+INTERVAL '25 days',NOW()-INTERVAL '1 day',NOW()),
+('tx149','Implement time tracking','Built-in time logging for tasks','TODO','MEDIUM','u86',NOW()+INTERVAL '18 days',NOW()-INTERVAL '2 days',NOW()),
+('tx150','Launch Chrome extension','Browser extension for quick capture','TODO','MEDIUM','u89',NOW()+INTERVAL '20 days',NOW()-INTERVAL '1 day',NOW()),
+-- Remaining tasks to reach ~300
+('tx151','Improve CI pipeline speed','Parallelize test runs','DONE','MEDIUM','u93',NOW()-INTERVAL '3 days',NOW()-INTERVAL '20 days',NOW()-INTERVAL '3 days'),
+('tx152','Create hiring plan','Q3 headcount planning','DONE','MEDIUM','u97',NOW()-INTERVAL '5 days',NOW()-INTERVAL '18 days',NOW()-INTERVAL '5 days'),
+('tx153','Build notification center','In-app notification hub','DONE','HIGH','u99',NOW()-INTERVAL '2 days',NOW()-INTERVAL '16 days',NOW()-INTERVAL '2 days'),
+('tx154','Design system audit','Audit component consistency','DONE','MEDIUM','u104',NOW()-INTERVAL '4 days',NOW()-INTERVAL '14 days',NOW()-INTERVAL '4 days'),
+('tx155','Implement MFA backup codes','Recovery codes for 2FA','DONE','HIGH','u107',NOW()-INTERVAL '1 day',NOW()-INTERVAL '12 days',NOW()-INTERVAL '1 day'),
+('tx156','Create onboarding emails','Drip email series for new users','DONE','MEDIUM','u106',NOW()-INTERVAL '6 days',NOW()-INTERVAL '10 days',NOW()-INTERVAL '6 days'),
+('tx157','Build bulk actions','Multi-select and bulk operations','DONE','MEDIUM','u95',NOW()-INTERVAL '3 days',NOW()-INTERVAL '22 days',NOW()-INTERVAL '3 days'),
+('tx158','Video testimonials','Record 5 customer testimonials','DONE','LOW','u102',NOW()-INTERVAL '8 days',NOW()-INTERVAL '20 days',NOW()-INTERVAL '8 days'),
+('tx159','Implement smart notifications','Digest and priority filtering','DONE','HIGH','u103',NOW()-INTERVAL '2 days',NOW()-INTERVAL '18 days',NOW()-INTERVAL '2 days'),
+('tx160','Build org chart tool','Visual org chart editor','DONE','MEDIUM','u105',NOW()-INTERVAL '4 days',NOW()-INTERVAL '16 days',NOW()-INTERVAL '4 days'),
+('tx161','Add keyboard shortcuts','Power-user keyboard navigation','IN_PROGRESS','MEDIUM','u93',NOW()+INTERVAL '8 days',NOW()-INTERVAL '3 days',NOW()),
+('tx162','Employee recognition program','Peer-to-peer kudos system','IN_PROGRESS','LOW','u97',NOW()+INTERVAL '20 days',NOW()-INTERVAL '4 days',NOW()),
+('tx163','Build API gateway','Kong API gateway setup','IN_PROGRESS','HIGH','u99',NOW()+INTERVAL '10 days',NOW()-INTERVAL '5 days',NOW()),
+('tx164','Create interactive demos','Product tour with Intercom','IN_PROGRESS','MEDIUM','u104',NOW()+INTERVAL '12 days',NOW()-INTERVAL '3 days',NOW()),
+('tx165','Implement smart forms','Conditional logic for forms','IN_PROGRESS','HIGH','u107',NOW()+INTERVAL '7 days',NOW()-INTERVAL '2 days',NOW()),
+('tx166','Launch customer newsletter','Monthly customer digest','IN_PROGRESS','LOW','u106',NOW()+INTERVAL '5 days',NOW()-INTERVAL '4 days',NOW()),
+('tx167','Build workflow engine','Visual workflow builder','IN_PROGRESS','HIGH','u95',NOW()+INTERVAL '15 days',NOW()-INTERVAL '5 days',NOW()),
+('tx168','Plan annual retreat','Organize Q3 company offsite','IN_PROGRESS','LOW','u101',NOW()+INTERVAL '30 days',NOW()-INTERVAL '3 days',NOW()),
+('tx169','Implement machine translation','Auto-translate content','IN_PROGRESS','HIGH','u103',NOW()+INTERVAL '18 days',NOW()-INTERVAL '4 days',NOW()),
+('tx170','Redesign billing page','Clearer pricing and invoice UI','IN_PROGRESS','MEDIUM','u109',NOW()+INTERVAL '9 days',NOW()-INTERVAL '2 days',NOW()),
+('tx171','Build SLA reports','Automated SLA compliance reports','TODO','HIGH','u94',NOW()+INTERVAL '22 days',NOW()-INTERVAL '2 days',NOW()),
+('tx172','Create diversity report','Annual DEI metrics report','TODO','MEDIUM','u98',NOW()+INTERVAL '28 days',NOW()-INTERVAL '1 day',NOW()),
+('tx173','Implement event sourcing','CQRS/ES pattern migration','TODO','HIGH','u100',NOW()+INTERVAL '45 days',NOW()-INTERVAL '2 days',NOW()),
+('tx174','Build customer scoring','NPS-based health score system','TODO','HIGH','u102',NOW()+INTERVAL '20 days',NOW()-INTERVAL '1 day',NOW()),
+('tx175','Create localization guide','Translation workflow documentation','TODO','LOW','u105',NOW()+INTERVAL '35 days',NOW()-INTERVAL '2 days',NOW()),
+('tx176','Implement predictive search','Typeahead with ML suggestions','TODO','HIGH','u108',NOW()+INTERVAL '25 days',NOW()-INTERVAL '1 day',NOW()),
+('tx177','Build resource planner','Team capacity planning tool','TODO','HIGH','u109',NOW()+INTERVAL '30 days',NOW()-INTERVAL '2 days',NOW()),
+('tx178','Social listening setup','Brand monitoring with Mention','TODO','MEDIUM','u90',NOW()+INTERVAL '15 days',NOW()-INTERVAL '1 day',NOW()),
+('tx179','Implement smart alerts','Anomaly detection for metrics','TODO','HIGH','u96',NOW()+INTERVAL '20 days',NOW()-INTERVAL '2 days',NOW()),
+('tx180','Build approval matrix','Configurable multi-level approvals','TODO','HIGH','u92',NOW()+INTERVAL '25 days',NOW()-INTERVAL '1 day',NOW()),
+-- Extra DONE tasks for score variety
+('tx181','Setup log aggregation','ELK stack for centralized logs','DONE','HIGH','u10',NOW()-INTERVAL '4 days',NOW()-INTERVAL '15 days',NOW()-INTERVAL '4 days'),
+('tx182','Create motion graphics','Animated explainer video assets','DONE','MEDIUM','u11',NOW()-INTERVAL '6 days',NOW()-INTERVAL '13 days',NOW()-INTERVAL '6 days'),
+('tx183','Implement health checks','K8s liveness and readiness probes','DONE','MEDIUM','u16',NOW()-INTERVAL '3 days',NOW()-INTERVAL '11 days',NOW()-INTERVAL '3 days'),
+('tx184','PR crisis management plan','Communications runbook for incidents','DONE','HIGH','u17',NOW()-INTERVAL '2 days',NOW()-INTERVAL '9 days',NOW()-INTERVAL '2 days'),
+('tx185','Merge HR systems','Consolidate BambooHR and Workday','DONE','HIGH','u18',NOW()-INTERVAL '5 days',NOW()-INTERVAL '20 days',NOW()-INTERVAL '5 days'),
+('tx186','New feature announcement','Blog post and email for v3.0','DONE','MEDIUM','u21',NOW()-INTERVAL '4 days',NOW()-INTERVAL '18 days',NOW()-INTERVAL '4 days'),
+('tx187','Build SCIM provisioning','Auto user provisioning via SCIM','DONE','HIGH','u22',NOW()-INTERVAL '2 days',NOW()-INTERVAL '16 days',NOW()-INTERVAL '2 days'),
+('tx188','Remote work policy update','Update WFH policy for 2026','DONE','LOW','u23',NOW()-INTERVAL '9 days',NOW()-INTERVAL '14 days',NOW()-INTERVAL '9 days'),
+('tx189','Implement Stripe webhooks','Handle payment lifecycle events','DONE','HIGH','u25',NOW()-INTERVAL '1 day',NOW()-INTERVAL '12 days',NOW()-INTERVAL '1 day'),
+('tx190','Create demo video','90-second product walkthrough','DONE','MEDIUM','u26',NOW()-INTERVAL '5 days',NOW()-INTERVAL '10 days',NOW()-INTERVAL '5 days'),
+('tx191','Add telemetry','OpenTelemetry tracing setup','DONE','MEDIUM','u28',NOW()-INTERVAL '3 days',NOW()-INTERVAL '20 days',NOW()-INTERVAL '3 days'),
+('tx192','Redesign empty states','Better UI for zero-data screens','DONE','LOW','u27',NOW()-INTERVAL '7 days',NOW()-INTERVAL '18 days',NOW()-INTERVAL '7 days'),
+('tx193','Build outbound webhook retries','Retry failed webhook deliveries','DONE','HIGH','u31',NOW()-INTERVAL '2 days',NOW()-INTERVAL '16 days',NOW()-INTERVAL '2 days'),
+('tx194','Competitive pricing analysis','Analyze competitor pricing models','DONE','MEDIUM','u30',NOW()-INTERVAL '6 days',NOW()-INTERVAL '14 days',NOW()-INTERVAL '6 days'),
+('tx195','Implement RBAC','Fine-grained role-based permissions','DONE','HIGH','u37',NOW()-INTERVAL '1 day',NOW()-INTERVAL '12 days',NOW()-INTERVAL '1 day'),
+('tx196','Customer journey mapping','Map full user lifecycle','DONE','MEDIUM','u40',NOW()-INTERVAL '4 days',NOW()-INTERVAL '10 days',NOW()-INTERVAL '4 days'),
+('tx197','Build team inbox','Shared inbox for support tickets','DONE','HIGH','u43',NOW()-INTERVAL '3 days',NOW()-INTERVAL '20 days',NOW()-INTERVAL '3 days'),
+('tx198','Setup A/B testing platform','Optimizely integration','DONE','MEDIUM','u46',NOW()-INTERVAL '5 days',NOW()-INTERVAL '18 days',NOW()-INTERVAL '5 days'),
+('tx199','Workforce planning model','Headcount forecasting model','DONE','MEDIUM','u38',NOW()-INTERVAL '7 days',NOW()-INTERVAL '16 days',NOW()-INTERVAL '7 days'),
+('tx200','Implement changelog','In-app product update feed','DONE','LOW','u49',NOW()-INTERVAL '8 days',NOW()-INTERVAL '14 days',NOW()-INTERVAL '8 days'),
+-- Final 100 tasks to reach 300
+('tx201','Add custom domains','White-label domain support','TODO','HIGH','u52',NOW()+INTERVAL '30 days',NOW()-INTERVAL '1 day',NOW()),
+('tx202','Build feedback widget','In-app feedback collection','TODO','MEDIUM','u55',NOW()+INTERVAL '20 days',NOW()-INTERVAL '2 days',NOW()),
+('tx203','Implement smart tagging','Auto-tag content with ML','TODO','HIGH','u58',NOW()+INTERVAL '25 days',NOW()-INTERVAL '1 day',NOW()),
+('tx204','Create partner API','Dedicated API for partners','TODO','HIGH','u61',NOW()+INTERVAL '28 days',NOW()-INTERVAL '2 days',NOW()),
+('tx205','Build screen recorder','In-browser screen recording','TODO','HIGH','u65',NOW()+INTERVAL '35 days',NOW()-INTERVAL '1 day',NOW()),
+('tx206','Launch Slack integration','Bidirectional Slack sync','TODO','HIGH','u68',NOW()+INTERVAL '20 days',NOW()-INTERVAL '2 days',NOW()),
+('tx207','Build time zone support','Global timezone handling','TODO','MEDIUM','u71',NOW()+INTERVAL '15 days',NOW()-INTERVAL '1 day',NOW()),
+('tx208','Implement goal tracking','OKR management module','TODO','HIGH','u75',NOW()+INTERVAL '22 days',NOW()-INTERVAL '2 days',NOW()),
+('tx209','Create style tokens','Design token system for themes','TODO','MEDIUM','u76',NOW()+INTERVAL '18 days',NOW()-INTERVAL '1 day',NOW()),
+('tx210','Launch Jira integration','Sync tasks with Jira issues','TODO','HIGH','u78',NOW()+INTERVAL '25 days',NOW()-INTERVAL '2 days',NOW()),
+('tx211','Build auto-scaling','AWS auto-scaling configuration','DONE','HIGH','u79',NOW()-INTERVAL '2 days',NOW()-INTERVAL '12 days',NOW()-INTERVAL '2 days'),
+('tx212','Customer success playbook','CS team runbooks','DONE','MEDIUM','u82',NOW()-INTERVAL '5 days',NOW()-INTERVAL '10 days',NOW()-INTERVAL '5 days'),
+('tx213','Implement smart routing','Intelligent request routing','DONE','HIGH','u83',NOW()-INTERVAL '1 day',NOW()-INTERVAL '20 days',NOW()-INTERVAL '1 day'),
+('tx214','Design system tokens','Color and spacing token library','DONE','MEDIUM','u84',NOW()-INTERVAL '4 days',NOW()-INTERVAL '18 days',NOW()-INTERVAL '4 days'),
+('tx215','Build push notifications','Mobile push via FCM/APNs','DONE','HIGH','u87',NOW()-INTERVAL '3 days',NOW()-INTERVAL '16 days',NOW()-INTERVAL '3 days'),
+('tx216','Plan hackathon event','Internal 48h hackathon planning','DONE','LOW','u85',NOW()-INTERVAL '8 days',NOW()-INTERVAL '14 days',NOW()-INTERVAL '8 days'),
+('tx217','Implement smart caching','Adaptive TTL cache strategy','DONE','HIGH','u88',NOW()-INTERVAL '2 days',NOW()-INTERVAL '12 days',NOW()-INTERVAL '2 days'),
+('tx218','Build customer segments','Rule-based user segmentation','DONE','MEDIUM','u91',NOW()-INTERVAL '5 days',NOW()-INTERVAL '10 days',NOW()-INTERVAL '5 days'),
+('tx219','Refactor billing service','Extract billing into microservice','DONE','HIGH','u95',NOW()-INTERVAL '3 days',NOW()-INTERVAL '20 days',NOW()-INTERVAL '3 days'),
+('tx220','Create employee NPS survey','Quarterly eNPS measurement','DONE','LOW','u97',NOW()-INTERVAL '9 days',NOW()-INTERVAL '18 days',NOW()-INTERVAL '9 days'),
+('tx221','Implement live chat','Intercom live chat integration','IN_PROGRESS','HIGH','u99',NOW()+INTERVAL '6 days',NOW()-INTERVAL '3 days',NOW()),
+('tx222','Build AR preview','Augmented reality product preview','IN_PROGRESS','HIGH','u103',NOW()+INTERVAL '45 days',NOW()-INTERVAL '5 days',NOW()),
+('tx223','Create growth dashboard','Marketing funnel analytics','IN_PROGRESS','HIGH','u106',NOW()+INTERVAL '8 days',NOW()-INTERVAL '2 days',NOW()),
+('tx224','Implement smart scheduling','AI-powered meeting scheduler','IN_PROGRESS','HIGH','u107',NOW()+INTERVAL '12 days',NOW()-INTERVAL '4 days',NOW()),
+('tx225','Build peer learning platform','Internal knowledge sharing','IN_PROGRESS','MEDIUM','u105',NOW()+INTERVAL '20 days',NOW()-INTERVAL '3 days',NOW()),
+('tx226','Optimize image delivery','WebP conversion and lazy loading','IN_PROGRESS','MEDIUM','u93',NOW()+INTERVAL '7 days',NOW()-INTERVAL '2 days',NOW()),
+('tx227','Launch ambassador program','Brand ambassador recruitment','IN_PROGRESS','MEDIUM','u102',NOW()+INTERVAL '15 days',NOW()-INTERVAL '4 days',NOW()),
+('tx228','Build skills matrix','Team competency tracking','IN_PROGRESS','MEDIUM','u101',NOW()+INTERVAL '18 days',NOW()-INTERVAL '3 days',NOW()),
+('tx229','Implement service mesh','Istio service mesh deployment','IN_PROGRESS','HIGH','u79',NOW()+INTERVAL '25 days',NOW()-INTERVAL '5 days',NOW()),
+('tx230','Create UX writing guide','Tone and voice documentation','IN_PROGRESS','LOW','u84',NOW()+INTERVAL '14 days',NOW()-INTERVAL '2 days',NOW()),
+('tx231','Build data masking','PII anonymization for dev envs','TODO','HIGH','u109',NOW()+INTERVAL '22 days',NOW()-INTERVAL '2 days',NOW()),
+('tx232','Create API versioning','Versioning strategy and migration','TODO','MEDIUM','u108',NOW()+INTERVAL '18 days',NOW()-INTERVAL '1 day',NOW()),
+('tx233','Launch user group program','Regional user group initiative','TODO','LOW','u90',NOW()+INTERVAL '40 days',NOW()-INTERVAL '2 days',NOW()),
+('tx234','Build scenario planner','What-if analysis tool','TODO','HIGH','u94',NOW()+INTERVAL '30 days',NOW()-INTERVAL '1 day',NOW()),
+('tx235','Implement smart alerts','Threshold-based anomaly alerts','TODO','HIGH','u96',NOW()+INTERVAL '25 days',NOW()-INTERVAL '2 days',NOW()),
+('tx236','Create sales playbook','Sales team process documentation','TODO','MEDIUM','u98',NOW()+INTERVAL '20 days',NOW()-INTERVAL '1 day',NOW()),
+('tx237','Build data catalog','Internal data dictionary','TODO','MEDIUM','u100',NOW()+INTERVAL '28 days',NOW()-INTERVAL '2 days',NOW()),
+('tx238','Implement GraphQL subscriptions','Real-time GraphQL events','TODO','HIGH','u92',NOW()+INTERVAL '22 days',NOW()-INTERVAL '1 day',NOW()),
+('tx239','Create employee app','Internal mobile app for HR','TODO','HIGH','u89',NOW()+INTERVAL '35 days',NOW()-INTERVAL '2 days',NOW()),
+('tx240','Build contract management','CLM system integration','TODO','HIGH','u86',NOW()+INTERVAL '30 days',NOW()-INTERVAL '1 day',NOW()),
+('tx241','Refactor email service','Move to event-driven emails','DONE','HIGH','u10',NOW()-INTERVAL '2 days',NOW()-INTERVAL '8 days',NOW()-INTERVAL '2 days'),
+('tx242','Launch award campaign','Industry award submission','DONE','LOW','u17',NOW()-INTERVAL '10 days',NOW()-INTERVAL '22 days',NOW()-INTERVAL '10 days'),
+('tx243','Build contract analyzer','AI contract review tool','DONE','HIGH','u19',NOW()-INTERVAL '3 days',NOW()-INTERVAL '20 days',NOW()-INTERVAL '3 days'),
+('tx244','Create knowledge base','Self-service help articles','DONE','MEDIUM','u20',NOW()-INTERVAL '5 days',NOW()-INTERVAL '18 days',NOW()-INTERVAL '5 days'),
+('tx245','Implement queue system','RabbitMQ message queue setup','DONE','HIGH','u22',NOW()-INTERVAL '1 day',NOW()-INTERVAL '16 days',NOW()-INTERVAL '1 day'),
+('tx246','Conduct salary survey','Benchmark external salary data','DONE','MEDIUM','u23',NOW()-INTERVAL '6 days',NOW()-INTERVAL '14 days',NOW()-INTERVAL '6 days'),
+('tx247','Build quote generator','Dynamic pricing quote tool','DONE','HIGH','u25',NOW()-INTERVAL '2 days',NOW()-INTERVAL '12 days',NOW()-INTERVAL '2 days'),
+('tx248','Launch brand podcast','Company thought leadership podcast','DONE','MEDIUM','u26',NOW()-INTERVAL '4 days',NOW()-INTERVAL '10 days',NOW()-INTERVAL '4 days'),
+('tx249','Implement feature tours','Guided feature walkthroughs','DONE','MEDIUM','u28',NOW()-INTERVAL '3 days',NOW()-INTERVAL '20 days',NOW()-INTERVAL '3 days'),
+('tx250','Create revenue dashboard','Finance KPI reporting tool','DONE','HIGH','u31',NOW()-INTERVAL '2 days',NOW()-INTERVAL '18 days',NOW()-INTERVAL '2 days'),
+('tx251','Build API health monitor','Continuous API testing','DONE','MEDIUM','u37',NOW()-INTERVAL '4 days',NOW()-INTERVAL '16 days',NOW()-INTERVAL '4 days'),
+('tx252','Customer win-loss analysis','Post-deal analysis interviews','DONE','MEDIUM','u40',NOW()-INTERVAL '6 days',NOW()-INTERVAL '14 days',NOW()-INTERVAL '6 days'),
+('tx253','Implement batch processing','Async batch job framework','DONE','HIGH','u43',NOW()-INTERVAL '1 day',NOW()-INTERVAL '12 days',NOW()-INTERVAL '1 day'),
+('tx254','Plan product summit','Annual customer product day','DONE','MEDIUM','u46',NOW()-INTERVAL '5 days',NOW()-INTERVAL '10 days',NOW()-INTERVAL '5 days'),
+('tx255','Migrate session storage','Redis-backed session management','DONE','HIGH','u49',NOW()-INTERVAL '2 days',NOW()-INTERVAL '20 days',NOW()-INTERVAL '2 days'),
+('tx256','Create visual identity','New visual brand guidelines','DONE','HIGH','u50',NOW()-INTERVAL '3 days',NOW()-INTERVAL '18 days',NOW()-INTERVAL '3 days'),
+('tx257','Build smart search filters','Faceted search UI','DONE','MEDIUM','u52',NOW()-INTERVAL '4 days',NOW()-INTERVAL '16 days',NOW()-INTERVAL '4 days'),
+('tx258','Employee wellness program','Mental health benefit rollout','DONE','LOW','u51',NOW()-INTERVAL '8 days',NOW()-INTERVAL '14 days',NOW()-INTERVAL '8 days'),
+('tx259','Implement request tracing','Distributed tracing with Jaeger','DONE','HIGH','u55',NOW()-INTERVAL '2 days',NOW()-INTERVAL '12 days',NOW()-INTERVAL '2 days'),
+('tx260','Launch co-marketing campaign','Joint campaign with Salesforce','DONE','HIGH','u57',NOW()-INTERVAL '3 days',NOW()-INTERVAL '10 days',NOW()-INTERVAL '3 days'),
+('tx261','Build custom widgets','Embeddable report widgets','IN_PROGRESS','HIGH','u59',NOW()+INTERVAL '9 days',NOW()-INTERVAL '4 days',NOW()),
+('tx262','Redesign mobile checkout','Faster 1-tap mobile checkout','IN_PROGRESS','HIGH','u63',NOW()+INTERVAL '6 days',NOW()-INTERVAL '3 days',NOW()),
+('tx263','Implement smart defaults','ML-based form prefilling','IN_PROGRESS','HIGH','u65',NOW()+INTERVAL '12 days',NOW()-INTERVAL '5 days',NOW()),
+('tx264','Create growth experiments','Systematic growth test backlog','IN_PROGRESS','MEDIUM','u67',NOW()+INTERVAL '15 days',NOW()-INTERVAL '3 days',NOW()),
+('tx265','Build org management','Hierarchy and team management','IN_PROGRESS','HIGH','u68',NOW()+INTERVAL '10 days',NOW()-INTERVAL '4 days',NOW()),
+('tx266','Document architecture','C4 model architecture diagrams','IN_PROGRESS','MEDIUM','u71',NOW()+INTERVAL '8 days',NOW()-INTERVAL '2 days',NOW()),
+('tx267','Run growth workshop','Team ideation sprint for growth','IN_PROGRESS','LOW','u74',NOW()+INTERVAL '5 days',NOW()-INTERVAL '3 days',NOW()),
+('tx268','Build scenario modeling','Financial scenario planner','IN_PROGRESS','HIGH','u75',NOW()+INTERVAL '14 days',NOW()-INTERVAL '5 days',NOW()),
+('tx269','Implement SSO for mobile','Mobile app SSO support','IN_PROGRESS','HIGH','u78',NOW()+INTERVAL '11 days',NOW()-INTERVAL '4 days',NOW()),
+('tx270','Design system audit v2','Quarterly design system review','IN_PROGRESS','MEDIUM','u80',NOW()+INTERVAL '7 days',NOW()-INTERVAL '2 days',NOW()),
+('tx271','Build custom integrations','No-code integration builder','TODO','HIGH','u83',NOW()+INTERVAL '40 days',NOW()-INTERVAL '2 days',NOW()),
+('tx272','Create podcast strategy','Thought leadership audio content','TODO','LOW','u86',NOW()+INTERVAL '35 days',NOW()-INTERVAL '1 day',NOW()),
+('tx273','Implement smart grouping','Auto-group related items','TODO','MEDIUM','u87',NOW()+INTERVAL '22 days',NOW()-INTERVAL '2 days',NOW()),
+('tx274','Build leave management','PTO tracking and approval','TODO','MEDIUM','u88',NOW()+INTERVAL '20 days',NOW()-INTERVAL '1 day',NOW()),
+('tx275','Implement token refresh','JWT refresh token rotation','TODO','HIGH','u91',NOW()+INTERVAL '12 days',NOW()-INTERVAL '2 days',NOW()),
+('tx276','Create media library','Centralized asset management','TODO','MEDIUM','u93',NOW()+INTERVAL '25 days',NOW()-INTERVAL '1 day',NOW()),
+('tx277','Build usage analytics','Per-feature usage tracking','TODO','HIGH','u95',NOW()+INTERVAL '18 days',NOW()-INTERVAL '2 days',NOW()),
+('tx278','Design system for emails','Email component library','TODO','MEDIUM','u96',NOW()+INTERVAL '20 days',NOW()-INTERVAL '1 day',NOW()),
+('tx279','Implement smart routing','Context-aware task routing','TODO','HIGH','u99',NOW()+INTERVAL '28 days',NOW()-INTERVAL '2 days',NOW()),
+('tx280','Build team health checks','Regular team retrospective tool','TODO','LOW','u101',NOW()+INTERVAL '30 days',NOW()-INTERVAL '1 day',NOW()),
+('tx281','Refactor API versioning','Deprecation and migration tooling','DONE','MEDIUM','u103',NOW()-INTERVAL '4 days',NOW()-INTERVAL '12 days',NOW()-INTERVAL '4 days'),
+('tx282','Create go-to-market plan','GTM strategy for new market','DONE','HIGH','u106',NOW()-INTERVAL '2 days',NOW()-INTERVAL '10 days',NOW()-INTERVAL '2 days'),
+('tx283','Build deployment pipeline','Zero-downtime blue/green deploys','DONE','HIGH','u107',NOW()-INTERVAL '1 day',NOW()-INTERVAL '8 days',NOW()-INTERVAL '1 day'),
+('tx284','Design print materials','Brochures for trade show','DONE','LOW','u108',NOW()-INTERVAL '9 days',NOW()-INTERVAL '20 days',NOW()-INTERVAL '9 days'),
+('tx285','Implement token audit log','Track all API token usage','DONE','HIGH','u109',NOW()-INTERVAL '2 days',NOW()-INTERVAL '18 days',NOW()-INTERVAL '2 days'),
+('tx286','Create recruitment brand','Employer branding materials','DONE','MEDIUM','u97',NOW()-INTERVAL '5 days',NOW()-INTERVAL '16 days',NOW()-INTERVAL '5 days'),
+('tx287','Build multi-region support','Geographic data residency','DONE','HIGH','u100',NOW()-INTERVAL '3 days',NOW()-INTERVAL '14 days',NOW()-INTERVAL '3 days'),
+('tx288','Plan customer day event','Annual customer appreciation day','DONE','MEDIUM','u102',NOW()-INTERVAL '6 days',NOW()-INTERVAL '12 days',NOW()-INTERVAL '6 days'),
+('tx289','Implement circuit breaker','Resilience patterns for services','DONE','HIGH','u104',NOW()-INTERVAL '2 days',NOW()-INTERVAL '10 days',NOW()-INTERVAL '2 days'),
+('tx290','Create launch checklist','Product launch go-live checklist','DONE','MEDIUM','u105',NOW()-INTERVAL '4 days',NOW()-INTERVAL '8 days',NOW()-INTERVAL '4 days'),
+('tx291','Build NPS collection','Automated NPS survey system','IN_PROGRESS','MEDIUM','u92',NOW()+INTERVAL '9 days',NOW()-INTERVAL '3 days',NOW()),
+('tx292','Implement smart filtering','AI-assisted filter suggestions','IN_PROGRESS','HIGH','u94',NOW()+INTERVAL '12 days',NOW()-INTERVAL '4 days',NOW()),
+('tx293','Create sales enablement','Battle cards and objection handling','IN_PROGRESS','MEDIUM','u98',NOW()+INTERVAL '10 days',NOW()-INTERVAL '3 days',NOW()),
+('tx294','Build expense tracking','Employee expense submission','IN_PROGRESS','MEDIUM','u89',NOW()+INTERVAL '15 days',NOW()-INTERVAL '5 days',NOW()),
+('tx295','Implement geo-blocking','Country-based access control','IN_PROGRESS','HIGH','u90',NOW()+INTERVAL '7 days',NOW()-INTERVAL '2 days',NOW()),
+('tx296','Create swag store','Employee merchandise shop','IN_PROGRESS','LOW','u85',NOW()+INTERVAL '25 days',NOW()-INTERVAL '4 days',NOW()),
+('tx297','Build resource center','In-app resource library','IN_PROGRESS','MEDIUM','u81',NOW()+INTERVAL '11 days',NOW()-INTERVAL '3 days',NOW()),
+('tx298','Implement content versioning','Draft and publish workflow','IN_PROGRESS','HIGH','u77',NOW()+INTERVAL '8 days',NOW()-INTERVAL '5 days',NOW()),
+('tx299','Create churn playbook','Customer retention runbooks','IN_PROGRESS','HIGH','u74',NOW()+INTERVAL '14 days',NOW()-INTERVAL '4 days',NOW()),
+('tx300','Build localization pipeline','Automated translation workflow','IN_PROGRESS','HIGH','u70',NOW()+INTERVAL '18 days',NOW()-INTERVAL '3 days',NOW());
+
+-- -----------------------------------------------
+-- SCORE EVENTS for all DONE bulk tasks (tx001–tx050, tx101–tx120, tx151–tx160, tx181–tx200, tx211–tx220, tx241–tx260, tx281–tx290)
+-- Priority: HIGH=20, MEDIUM=10, LOW=5
+-- All completed before due date => +5 bonus each
+-- -----------------------------------------------
+INSERT INTO score_events (id, user_id, task_id, points, bonus, penalty, total_awarded, created_at)
+SELECT
+  'se_' || t.id,
+  t.assignee_id,
+  t.id,
+  CASE t.priority WHEN 'HIGH' THEN 20 WHEN 'MEDIUM' THEN 10 ELSE 5 END,
+  5,  -- early bonus (completed before due date in all cases above)
+  0,
+  CASE t.priority WHEN 'HIGH' THEN 25 WHEN 'MEDIUM' THEN 15 ELSE 10 END,
+  t.updated_at
+FROM tasks t
+WHERE t.id LIKE 'tx%'
+  AND t.status = 'DONE'
+  AND t.assignee_id IS NOT NULL;
+
+-- -----------------------------------------------
+-- PRODUCTIVITY SCORES — upsert aggregates for all affected users
+-- -----------------------------------------------
+INSERT INTO productivity_scores (id, user_id, total_score, tasks_completed, updated_at)
+SELECT
+  'ps_' || se.user_id,
+  se.user_id,
+  SUM(se.total_awarded),
+  COUNT(se.id),
+  NOW()
+FROM score_events se
+WHERE se.user_id LIKE 'u%'
+GROUP BY se.user_id
+ON CONFLICT (user_id) DO UPDATE
+  SET total_score     = EXCLUDED.total_score,
+      tasks_completed = EXCLUDED.tasks_completed,
+      updated_at      = NOW();
