@@ -2,7 +2,7 @@
 
 ## Purpose & Audience
 
-This document specifies the Scoreboard API Module — a backend service that maintains a live top-10 scoreboard for a website. The module accepts score increments from authenticated users via a secure HTTP endpoint, prevents score manipulation through JWT-based authentication and server-side delta computation, and broadcasts real-time leaderboard updates to connected clients via Server-Sent Events (SSE). The leaderboard is stored in a Redis sorted set, which provides O(log N) ranking operations and live update semantics.
+This document specifies the Scoreboard API Module — a backend service that maintains a live top-10 scoreboard for a website. The module accepts score increments from authenticated users via a secure HTTP endpoint, authorizes each increment with a trusted action-completion proof, computes awarded points server-side, and broadcasts real-time leaderboard updates to connected clients via Server-Sent Events (SSE). The live leaderboard is served from a Redis projection built from durable PostgreSQL state.
 
 This specification is written for a backend engineering team. It is the authoritative implementation contract — not a tutorial or reference guide. The team should implement to the SHALL requirements defined in each section. Implementation details (specific Redis commands, Fastify plugin choices, library versions) are provided as non-normative hints where helpful, but they are not normative unless stated with SHALL or MUST language.
 
@@ -10,7 +10,7 @@ This specification is written for a backend engineering team. It is the authorit
 
 ## Architecture Overview
 
-The module exposes three endpoints: `POST /scores` (authenticated write path), `GET /leaderboard` (public read path), and `GET /leaderboard/stream` (public real-time SSE stream). Score submissions are authenticated via JWT bearer tokens (HS256); the server resolves the score delta from the supplied `action_type` against an internal action registry and increments the user's cumulative score atomically. The Redis sorted set is the low-latency ranking and read layer; PostgreSQL (or equivalent durable store) is the authoritative write-path ledger. Connected SSE clients receive the full top-10 snapshot after each successful score update. Recommended stack: Node.js v22 LTS, Fastify v5, PostgreSQL 17, Redis 8, JWT (HS256).
+The module exposes three endpoints: `POST /scores` (authenticated write path), `GET /leaderboard` (public read path), and `GET /leaderboard/stream` (public real-time SSE stream). Score submissions are authenticated via JWT bearer tokens (HS256) and authorized with a short-lived `action_proof` issued by a trusted action-verification component after the user actually completes the action. The server resolves the score delta from the supplied `action_type` against an internal action registry and updates the user's cumulative score atomically. PostgreSQL (or equivalent durable store) is the authoritative write-path ledger and projection source; Redis is the low-latency ranking/read projection. Connected SSE clients receive the full top-10 snapshot after each successful score update. Recommended stack: Node.js v22 LTS, Fastify v5, PostgreSQL 17, Redis 8, JWT (HS256).
 
 ---
 
@@ -18,19 +18,29 @@ The module exposes three endpoints: `POST /scores` (authenticated write path), `
 
 The module uses a dual-layer storage approach that separates durability from read performance.
 
-**Write path (durable):** Every accepted `POST /scores` request persists a score event record to PostgreSQL before touching Redis. PostgreSQL is the authoritative source of truth — the full event history is retained for audit, fraud review, and projection rebuilds.
+**Write path (durable):** Every accepted `POST /scores` request persists a score event record to PostgreSQL and updates the user's durable score projection in the same database transaction. PostgreSQL is the authoritative source of truth — the full event history is retained for audit, fraud review, and projection rebuilds.
 
-**Read/ranking layer (fast):** Redis sorted sets hold the live leaderboard state. The `ZINCRBY` operation updates the user's rank position atomically. `GET /leaderboard` and SSE broadcasts read from Redis, not from PostgreSQL, keeping read latency low.
+**Durable tables / records:**
+
+- `score_events`: append-only event ledger with a durable unique constraint on `event_id`. Each row records `event_id`, `user_id`, `action_type`, awarded `delta`, proof identifier or proof hash, and accepted timestamp.
+- `user_scores`: one row per user storing `user_id`, `display_name`, cumulative `score`, and `score_reached_at` (the timestamp used for deterministic tie-breaking when equal scores exist).
+
+**Read/ranking layer (fast):** Redis holds a projection derived from PostgreSQL:
+
+- `leaderboard:ranking`: sorted set keyed by `userId`, storing the ranking sort value used to retrieve the top 10.
+- `leaderboard:user:<userId>`: hash storing `displayName`, canonical `score`, and `scoreReachedAt` for response rendering.
+
+`GET /leaderboard` and SSE broadcasts read from Redis, not from PostgreSQL, keeping read latency low while still allowing Redis to be rebuilt from durable state.
 
 **Score submission flow:**
 
 ```
 POST /scores
-  1. Validate JWT and request body
-  2. Atomic nonce check-and-store (Redis SET NX EX)
-  3. Persist score event to PostgreSQL (idempotent on event_id)
-  4. Atomic score increment in Redis (ZINCRBY)
-  5. Read updated top-10 snapshot (ZREVRANGE)
+  1. Validate JWT, request body, and action proof
+  2. Insert score event into PostgreSQL with durable unique(event_id)
+  3. Update durable user_scores projection in the same transaction
+  4. Project the committed score state into Redis
+  5. Read updated top-10 snapshot from Redis
   6. Return 201 to client
   7. Broadcast leaderboard_update SSE event to all connected clients
 ```
@@ -39,11 +49,12 @@ POST /scores
 
 | Failure | Behavior |
 |---------|----------|
-| Redis unavailable | Reject the request with `503`. Do not accept score submissions without the ranking layer — partial writes would cause score/rank divergence. |
 | PostgreSQL unavailable | Reject the request with `503`. The durable ledger is required before Redis is updated. |
-| Redis data loss (restart, eviction) | Rebuild the leaderboard projection by replaying `score_events` from PostgreSQL. A scheduled reconciliation job can detect and repair drift. |
+| Redis unavailable before the request starts | Reject the request with `503` if synchronous projection is required for this deployment. |
+| Redis projection update fails after the PostgreSQL transaction commits | Do not lose the accepted score event. Return success from the durable result, mark the Redis projection as stale, and enqueue immediate reconciliation before the next read/broadcast cycle. |
+| Redis data loss (restart, eviction) | Rebuild the leaderboard projection by replaying `score_events` and `user_scores` from PostgreSQL. A scheduled reconciliation job can detect and repair drift. |
 
-**Implementation note (non-normative):** The `displayName` field returned by `GET /leaderboard` and SSE events is denormalized into the score record at write time (captured from the JWT payload or a user profile lookup at submission). It MUST NOT be fetched from a separate user service at read time — denormalization eliminates read-path coupling to the user profile service and keeps leaderboard reads fast and self-contained. Display name update propagation (e.g., if a user changes their name) is out of scope for v1.
+**Implementation note (non-normative):** The `displayName` field returned by `GET /leaderboard` and SSE events is denormalized into `user_scores` at write time (captured from the JWT payload or a user profile lookup at submission) and then projected into Redis. It MUST NOT be fetched from a separate user service at read time — denormalization eliminates read-path coupling to the user profile service and keeps leaderboard reads fast and self-contained. Display name update propagation (e.g., if a user changes their name) is out of scope for v1.
 
 ---
 
@@ -51,7 +62,7 @@ POST /scores
 
 This security model defines the authentication and protection mechanisms for the scoreboard API's score submission endpoint. It establishes JWT bearer authentication requirements, anti-cheat and IDOR prevention constraints, transport security controls, rate limiting policy, and mandatory response headers. Together, these controls prevent malicious users from increasing scores without authorization.
 
-**Non-goals:** This security model does not cover client-side XSS mitigations, CSRF protection on non-API routes, OAuth or social login flows, or game-server-to-API trust verification. Those concerns are out of scope for this module.
+**Non-goals:** This security model does not cover client-side XSS mitigations, CSRF protection on non-API routes, OAuth or social login flows, or anti-cheat heuristics beyond the proof-based authorization contract defined below. Those concerns are out of scope for this module.
 
 ### Authentication
 
@@ -67,9 +78,9 @@ This security model defines the authentication and protection mechanisms for the
 
 **S-05:** The server SHALL extract the acting user's identity exclusively from the JWT `sub` claim. The request body MUST NOT contain a writable `userId` or `user_id` field. If the request body supplies either field, the server SHALL ignore or reject it — the identity used for all score operations MUST be the `sub` value from the validated JWT. *(Prevents Insecure Direct Object Reference (IDOR): without this control, an authenticated user could claim to act as another user simply by supplying a different identifier in the request body.)*
 
-**S-06:** The server SHALL store each processed `event_id` nonce with a time-to-live (TTL) at least equal to the maximum score-submission window defined by the JWT TTL (15 minutes). Duplicate submissions presenting an `event_id` that has already been processed within its TTL window SHALL be rejected with `409 Conflict` and error code `ERR_CONFLICT`. *(Prevents replay attacks: a captured valid request cannot be resubmitted to inflate scores, because the server recognises the nonce as already consumed.)*
+**S-06:** The server SHALL enforce idempotency on `event_id` using a durable uniqueness constraint in the authoritative store (for example, `UNIQUE(event_id)` on `score_events`). A short-lived Redis nonce cache MAY be used as an optimisation, but it is not authoritative. Duplicate submissions presenting an `event_id` that has already been accepted SHALL be rejected with `409 Conflict` and error code `ERR_CONFLICT`, even if any cache entry has already expired. *(Prevents replay attacks without risking loss of legitimate events when an in-memory nonce cache expires or a retry happens after a transient failure.)*
 
-**S-07:** The server SHALL validate score increments server-side. The client request body supplies only an `event_id` and an `action_type`; the server looks up and applies the authoritative score delta for that action type. The client MUST NOT supply an absolute `score` value, a numeric `score_increment`, or any other numeric field that directly determines the awarded points. *(Prevents score manipulation by direct value injection: a client cannot award itself an arbitrary number of points by crafting a large numeric value in the request.)*
+**S-07:** The server SHALL require proof that the scored action was actually completed. Each `POST /scores` request MUST include an `action_proof` issued by a trusted action-verification component only after the action succeeds. The proof MUST be bound to the authenticated user (`sub`), `event_id`, `action_type`, and an expiry timestamp; the server SHALL reject the request with `403 Forbidden` and `ERR_FORBIDDEN` if the proof is missing, expired, invalid, already consumed, or does not match the JWT subject and request body. The server SHALL then look up and apply the authoritative score delta for that `action_type`. The client MUST NOT supply an absolute `score` value, a numeric `score_increment`, or any other numeric field that directly determines the awarded points. *(Prevents authenticated users from fabricating completed actions or directly injecting arbitrary point values.)*
 
 ### Transport Security
 
@@ -118,10 +129,11 @@ Rules:
 | Code | HTTP Status | When Returned |
 |------|-------------|---------------|
 | `ERR_UNAUTHORIZED` | 401 | JWT is missing, expired, or invalid — covers any claim validation failure, algorithm mismatch, or `alg:none` rejection |
-| `ERR_FORBIDDEN` | 403 | Token is valid and authentic, but the requesting user lacks permission for the targeted resource; also returned for Origin allowlist rejection on SSE/WebSocket connections |
+| `ERR_FORBIDDEN` | 403 | Token is valid and authentic, but the requesting user is not allowed to perform the requested operation; also returned for invalid or mismatched `action_proof` and for Origin allowlist rejection on SSE/WebSocket connections |
 | `ERR_VALIDATION_FAILED` | 400 | Request body fails schema validation — missing required fields, wrong field types, values outside permitted ranges |
 | `ERR_RATE_LIMITED` | 429 | Per-user submission rate limit exceeded; see `Retry-After` response header for retry guidance |
-| `ERR_CONFLICT` | 409 | Duplicate `event_id` — the same nonce has already been processed within its TTL window |
+| `ERR_CONFLICT` | 409 | Duplicate `event_id` — the same event has already been durably accepted |
+| `ERR_UNAVAILABLE` | 503 | Required infrastructure dependency is temporarily unavailable (for example PostgreSQL, Redis, or proof verification backend) |
 | `ERR_INTERNAL` | 500 | Unexpected server-side error; details are logged server-side and never included in the response |
 
 ### HTTP Status Code Semantics
@@ -135,6 +147,7 @@ Rules:
 | `403 Forbidden` | Request is authenticated but the caller is not authorized for this operation; also used for Origin allowlist rejections | `ERR_FORBIDDEN` |
 | `409 Conflict` | Duplicate submission — the idempotency constraint on `event_id` was violated | `ERR_CONFLICT` |
 | `429 Too Many Requests` | Rate limit exceeded; `Retry-After` header indicates seconds until next permitted request | `ERR_RATE_LIMITED` |
+| `503 Service Unavailable` | A required dependency is temporarily unavailable; client should retry with backoff | `ERR_UNAVAILABLE` |
 | `500 Internal Server Error` | Unexpected server failure; client should retry with exponential backoff | `ERR_INTERNAL` |
 
 ### Examples
@@ -193,7 +206,7 @@ Cache-Control: no-store
 
 ## POST /scores
 
-Submit a score increment for an authenticated user. The server resolves the score delta from the supplied `action_type` against an internal action registry; the client never supplies a numeric score value. User identity is derived exclusively from the JWT `sub` claim.
+Submit a score increment for an authenticated user. The server resolves the score delta from the supplied `action_type` against an internal action registry, but it awards points only when the request also carries a valid `action_proof` from the trusted action-verification component. The client never supplies a numeric score value. User identity is derived exclusively from the JWT `sub` claim.
 
 **Non-goals:** This section does not define the action registry schema or enumerate valid `action_type` values — those are implementation-specific and not part of this API contract. It also does not define the SSE broadcast triggered by a successful submission (see `GET /leaderboard/stream`).
 
@@ -209,6 +222,7 @@ Submit a score increment for an authenticated user. The server resolves the scor
 |-------|------|----------|-------------|
 | `event_id` | string | Yes | Client-generated nonce uniquely identifying this action occurrence. Used for replay prevention. Must be a non-empty string. |
 | `action_type` | string | Yes | Identifies the completed action. The server looks up the authoritative score delta in an internal action registry. Must be a non-empty string matching a known action. |
+| `action_proof` | string | Yes | Short-lived proof issued by the trusted action-verification component after the action succeeds. The proof MUST be bound to `event_id`, `action_type`, and the authenticated user. |
 
 No other fields are accepted. The request body MUST NOT include `score`, `score_increment`, `userId`, `user_id`, or any numeric score value. The server MUST treat any such field as absent or reject the request outright.
 
@@ -221,7 +235,8 @@ Content-Type: application/json
 
 {
   "event_id": "evt_7f3a9c2d-1b4e-4f8a-9d0c-2e5b7a1f3c6d",
-  "action_type": "level_complete"
+  "action_type": "level_complete",
+  "action_proof": "apt_eyJhbGciOiJIUzI1NiJ9..."
 }
 ```
 
@@ -261,13 +276,13 @@ Cache-Control: no-store
 
 ### Validation Rules
 
-**E-01:** The server SHALL reject any request whose body is missing `event_id` or `action_type` with `400 Bad Request` and error code `ERR_VALIDATION_FAILED`. Both fields are required; either field absent or empty string constitutes a validation failure. *(Satisfies SCORE-01: ensures the endpoint only accepts the correct two-field schema.)*
+**E-01:** The server SHALL reject any request whose body is missing `event_id`, `action_type`, or `action_proof` with `400 Bad Request` and error code `ERR_VALIDATION_FAILED`. All three fields are required; any of them absent or empty string constitutes a validation failure. *(Ensures the endpoint accepts only the required schema for authenticated, proof-backed score submission.)*
 
-**E-02:** The server SHALL reject any request whose `action_type` value does not match a known entry in the server-side action registry with `400 Bad Request` and error code `ERR_VALIDATION_FAILED`. *(Satisfies SCORE-02 and D-07: unknown action types cannot produce score increments — all awarded point values are server-authoritative.)*
+**E-02:** The server SHALL reject any request whose `action_type` value does not match a known entry in the server-side action registry with `400 Bad Request` and error code `ERR_VALIDATION_FAILED`. The server SHALL reject any request whose `action_proof` is invalid, expired, already consumed, or not bound to the authenticated user, `event_id`, and `action_type` with `403 Forbidden` and error code `ERR_FORBIDDEN`. *(Unknown action types cannot produce score increments, and a valid login alone is not sufficient to claim that an action was completed.)*
 
 **E-03:** The server SHALL extract the acting user's identity exclusively from the JWT `sub` claim. The request body MUST NOT contain a writable `userId` or `user_id` field; any such field in the body SHALL be ignored or rejected. This requirement works in conjunction with S-05 (see Security Model § Anti-Cheat / IDOR Prevention). *(Satisfies SCORE-03: prevents IDOR — a user cannot award points to another account by supplying a different identifier in the request body.)*
 
-**E-04:** The server SHALL look up the score delta for the supplied `action_type` from an internal action registry and apply that server-authoritative value as the increment. The client MUST NOT supply a numeric score field; the server MUST NOT use any client-supplied value as the score increment. *(Satisfies SCORE-02 and D-02: server-side delta computation prevents clients from awarding themselves arbitrary point values.)*
+**E-04:** The server SHALL look up the score delta for the supplied `action_type` from an internal action registry and apply that server-authoritative value as the increment only after `action_proof` validation succeeds. The client MUST NOT supply a numeric score field; the server MUST NOT use any client-supplied value as the score increment. *(Server-side delta computation plus proof validation prevents clients from awarding themselves arbitrary point values or inventing successful actions.)*
 
 **Error examples:**
 
@@ -284,9 +299,9 @@ Cache-Control: no-store
 
 ### Replay Prevention
 
-**E-05:** The server SHALL perform the `event_id` nonce check-and-store as a single atomic operation. The check (does this `event_id` already exist?) and the store (record it as consumed) MUST be indivisible — concurrent duplicate submissions MUST NOT both succeed. Acceptable implementations include Redis `SET key NX EX <ttl>`, a Lua script wrapping `EXISTS`+`SET`, or a database-level unique constraint within a transaction. The specific mechanism is an implementation detail; the atomicity guarantee is a SHALL requirement. *(Prevents replay attacks under concurrent load: without atomicity, two simultaneous requests with the same `event_id` can both pass the existence check before either stores the nonce, allowing double-scoring.)*
+**E-05:** The server SHALL perform the duplicate check and durable acceptance of `event_id` as a single atomic database operation. The insert into `score_events` and the uniqueness enforcement on `event_id` MUST be indivisible — concurrent duplicate submissions MUST NOT both succeed. Acceptable implementations include `INSERT ... ON CONFLICT DO NOTHING` plus row-count inspection or an explicit unique-constraint violation check inside a transaction. The specific SQL shape is an implementation detail; the atomicity guarantee is a SHALL requirement. *(Prevents replay attacks under concurrent load without consuming a nonce before the score event is durably recorded.)*
 
-**E-06:** The server SHALL store consumed `event_id` nonces with a TTL of at least the maximum JWT lifetime (15 minutes, per S-03). A duplicate `event_id` received within the TTL window SHALL be rejected with `409 Conflict` and error code `ERR_CONFLICT`. *(Satisfies SCORE-06 and D-10: nonces outlive the tokens that generated them, closing the window for delayed replay after token expiry.)*
+**E-06:** A duplicate `event_id` received after a successful durable write SHALL still be rejected with `409 Conflict` and error code `ERR_CONFLICT`, regardless of the age of the original event. A TTL-based Redis cache MAY be used as a fast-path replay filter, but expiry of that cache entry MUST NOT make the same `event_id` acceptable again. *(Makes `event_id` true idempotency state rather than a short-lived replay hint.)*
 
 **Example:**
 
@@ -303,17 +318,19 @@ Cache-Control: no-store
 
 ### Atomic Score Increment
 
-**E-07:** The server SHALL increment the user's cumulative score using an atomic increment operation. For Redis implementations: use `ZINCRBY <leaderboard_key> <delta> <userId>`. For SQL implementations: use a single `UPDATE scores SET score = score + $delta WHERE user_id = $userId` statement. Read-modify-write sequences (SELECT then UPDATE) are explicitly prohibited. *(Satisfies SCORE-05 and D-18: prevents race conditions in which two concurrent submissions from the same user read the same stale total and each overwrite it with the same incremented value, losing one increment.)*
+**E-07:** The server SHALL update the user's cumulative score and `score_reached_at` in the durable store within the same transaction that inserts `score_events`. Read-modify-write sequences (SELECT then UPDATE with a stale value) are explicitly prohibited. After the transaction commits, the server SHALL project the committed `score`, `display_name`, and `score_reached_at` values into Redis using atomic operations on `leaderboard:ranking` and `leaderboard:user:<userId>`. *(Prevents race conditions in the source of truth while keeping the read model consistent with the committed result.)*
 
 ### Error Responses
 
 | Scenario | HTTP Status | Error Code |
 |----------|-------------|------------|
-| Missing `event_id` or `action_type` | 400 | `ERR_VALIDATION_FAILED` |
+| Missing `event_id`, `action_type`, or `action_proof` | 400 | `ERR_VALIDATION_FAILED` |
 | Unknown `action_type` | 400 | `ERR_VALIDATION_FAILED` |
 | JWT missing or invalid | 401 | `ERR_UNAUTHORIZED` |
-| Duplicate `event_id` (within TTL) | 409 | `ERR_CONFLICT` |
+| Invalid, expired, replayed, or mismatched `action_proof` | 403 | `ERR_FORBIDDEN` |
+| Duplicate `event_id` | 409 | `ERR_CONFLICT` |
 | Rate limit exceeded | 429 | `ERR_RATE_LIMITED` |
+| PostgreSQL, Redis, or proof-verification backend unavailable before acceptance | 503 | `ERR_UNAVAILABLE` |
 | Unexpected server error | 500 | `ERR_INTERNAL` |
 
 Error response structure is defined in the Security Model § Error Contract. Error codes above are referenced by name only and are not redefined here.
@@ -322,7 +339,7 @@ Error response structure is defined in the Security Model § Error Contract. Err
 
 ## GET /leaderboard
 
-Retrieve the current top-10 ranked leaderboard. No authentication is required — the leaderboard is publicly readable. The response reflects the live state of the Redis sorted set at the moment of the request.
+Retrieve the current top-10 ranked leaderboard. No authentication is required — the leaderboard is publicly readable. The response reflects the live state of the Redis leaderboard projection at the moment of the request.
 
 ### Request
 
@@ -358,7 +375,7 @@ On success the server returns `200 OK` with the following response body:
 | `leaderboard` | array | Ranked entries ordered by `rank` ascending (rank 1 first, rank 10 last). |
 | `rank` | integer | Position in the leaderboard (1–10). Rank 1 is the highest scorer. |
 | `userId` | string | The user's unique identifier — the JWT `sub` claim value used at score submission time. |
-| `displayName` | string | Denormalized display string captured at score write time. See § Data Storage Model for the denormalization rationale. |
+| `displayName` | string | Denormalized display string captured in `user_scores` at score write time and projected into Redis. See § Data Storage Model for the denormalization rationale. |
 | `score` | integer | The user's cumulative total score. |
 
 **Example:**
@@ -385,11 +402,11 @@ Cache-Control: no-store
 
 **E-09:** When two or more users share identical scores, the user who reached that score value first SHALL hold the higher rank (lower rank number). The tiebreaker is the `score_reached_at` timestamp: the entry with the earlier timestamp wins the higher rank. `score_reached_at` records the moment the user's cumulative score was last increased — it is updated only when the score value changes, not by any other operation. This rule SHALL be applied consistently — it is a stable, deterministic ordering. *(Satisfies LB-02: eliminates non-deterministic rank assignment for equal-score users. Prevents gamification exploits where users deliberately match a target score to compete for rank via repeated submissions.)*
 
-**Implementation note:** One Redis implementation pattern for this rule is to encode a composite sort key: `score_value * 10^13 + (epoch_max − score_reached_at_epoch_ms)`, storing the composite as the sorted set score so that equal point values naturally sort older entries above newer ones. Alternatively, a Lua script can perform a stable sort with `score_reached_at` as a secondary comparator. The specific implementation is left to the team; the observable behavior (earlier `score_reached_at` timestamp wins higher rank) is the SHALL requirement.
+**Implementation note:** One Redis implementation pattern for this rule is to encode a composite sort key into `leaderboard:ranking`: `score_value * 10^13 + (epoch_max − score_reached_at_epoch_ms)`, while storing the canonical `score` and `score_reached_at` values in `leaderboard:user:<userId>`. Alternatively, a Lua script can perform a stable sort with `score_reached_at` as a secondary comparator. The specific implementation is left to the team; the observable behavior (earlier `score_reached_at` timestamp wins higher rank) is the SHALL requirement.
 
 ### Caching
 
-**E-10:** The Redis sorted set SHALL serve as the canonical, always-fresh leaderboard store. Each `GET /leaderboard` request SHALL read directly from Redis (e.g., `ZREVRANGE leaderboard 0 9 WITHSCORES`). No separate response cache layer is specified — freshness is maintained by the sorted set's live update semantics. The `Cache-Control: no-store` response header (required by S-10 in the Security Model) prevents HTTP-layer caching by intermediaries. *(Satisfies LB-03: caching strategy defined with explicit non-reliance on an HTTP response cache; Redis sorted set is the authoritative data source.)*
+**E-10:** Redis SHALL serve as the canonical live read model for leaderboard responses. Each `GET /leaderboard` request SHALL read the top 10 user IDs from `leaderboard:ranking` and then read `displayName`, canonical `score`, and `scoreReachedAt` from the corresponding `leaderboard:user:<userId>` hashes. No separate response cache layer is specified — freshness is maintained by the Redis projection's live update semantics. The `Cache-Control: no-store` response header (required by S-10 in the Security Model) prevents HTTP-layer caching by intermediaries. *(Defines a complete read model rather than relying on a sorted set alone to provide response fields it cannot store by itself.)*
 
 > **Improvement suggestion:** Under burst read traffic, a short-TTL in-memory response cache (1–2 seconds) could reduce Redis read load without meaningfully degrading freshness. If implemented, the cache MUST be invalidated on every successful `POST /scores` response to prevent stale top-10 data from being served within the TTL window. This is an optional enhancement, not a normative requirement — it should be evaluated against observed Redis load in production.
 
@@ -480,21 +497,29 @@ Error response structure is defined in the Security Model § Error Contract. Err
 
 ## Execution Flow
 
-The following sequence diagram shows the complete lifecycle of a score submission — from client action to real-time broadcast.
+The following sequence diagram shows the complete lifecycle of a score submission — from client action to durable acceptance to real-time broadcast.
 
 ```mermaid
 sequenceDiagram
     participant Client
     participant API as API Server
+    participant Verifier as Action Verifier
     participant DB as PostgreSQL
     participant Redis
     participant SSE as SSE Clients
 
-    Client->>API: POST /scores<br/>{event_id, action_type}<br/>Authorization: Bearer <JWT>
+    Client->>API: POST /scores<br/>{event_id, action_type, action_proof}<br/>Authorization: Bearer <JWT>
     API->>API: Validate JWT (S-01–S-04)<br/>alg=HS256, claims: sub/exp/iat/nbf/iss/aud
 
     alt JWT invalid or expired
         API-->>Client: 401 Unauthorized<br/>ERR_UNAUTHORIZED
+    end
+
+    API->>Verifier: Validate action_proof<br/>bound to sub, event_id, action_type
+
+    alt Proof invalid, expired, replayed, or mismatched
+        Verifier-->>API: reject
+        API-->>Client: 403 Forbidden<br/>ERR_FORBIDDEN
     end
 
     API->>API: Check per-user rate limit (S-09)
@@ -503,19 +528,18 @@ sequenceDiagram
         API-->>Client: 429 Too Many Requests<br/>ERR_RATE_LIMITED
     end
 
-    API->>Redis: SET event_id NX EX 900<br/>(atomic nonce check-and-store)
+    API->>DB: INSERT score_event UNIQUE(event_id)<br/>+ UPDATE user_scores in same transaction
 
     alt Duplicate event_id
-        Redis-->>API: 0 (nonce already exists)
+        DB-->>API: unique violation
         API-->>Client: 409 Conflict<br/>ERR_CONFLICT
     end
 
-    Redis-->>API: 1 (nonce stored)
-    API->>DB: INSERT score_event (event_id, user_id, action_type, delta)<br/>ON CONFLICT DO NOTHING
-    DB-->>API: ok
-    API->>Redis: ZINCRBY leaderboard <delta> <userId>
-    Redis-->>API: newScore
-    API->>Redis: ZREVRANGE leaderboard 0 9 WITHSCORES
+    DB-->>API: committed {newScore, displayName, score_reached_at}
+    API->>Redis: HSET leaderboard:user:<userId><br/>displayName, score, scoreReachedAt
+    API->>Redis: ZADD leaderboard:ranking <rankKey> <userId>
+    API->>Redis: ZREVRANGE leaderboard:ranking 0 9
+    API->>Redis: HGETALL leaderboard:user:<top10 userIds>
     Redis-->>API: top-10 snapshot
     API-->>Client: 201 Created<br/>{userId, newScore, rank}
     API->>SSE: event: leaderboard_update<br/>data: {"leaderboard":[...top-10...]}
