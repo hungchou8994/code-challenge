@@ -6,8 +6,9 @@ COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
 COPY backend/package.json ./backend/
 
-# Install all workspace deps
-RUN npm ci --workspace=shared --workspace=backend
+# Install all workspace deps (--ignore-scripts skips postinstall prisma generate;
+# schema.prisma is not copied yet — prisma generate runs explicitly below)
+RUN npm ci --workspace=shared --workspace=backend --ignore-scripts
 
 # Copy source
 COPY shared/ ./shared/
@@ -29,7 +30,7 @@ COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
 COPY backend/package.json ./backend/
 
-RUN npm ci --workspace=shared --workspace=backend --omit=dev
+RUN npm ci --workspace=shared --workspace=backend --omit=dev --ignore-scripts
 
 COPY shared/ ./shared/
 COPY --from=base /app/backend/dist ./backend/dist
