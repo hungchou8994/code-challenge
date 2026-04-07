@@ -25,7 +25,7 @@
 
 ### Performance — Scalability
 
-- [ ] **PERF-01**: Users dropdown no longer hardcodes `limit=1000` — add `/api/users/search?q=` typeahead endpoint; update frontend dropdowns to use it
+- [x] **PERF-01**: Users dropdown no longer hardcodes `limit=1000` — add `/api/users/search?q=` typeahead endpoint; update frontend dropdowns to use it
 
 ### API Design — Polish
 
@@ -81,7 +81,7 @@
 | DEBT-04 | Phase 1 | Complete |
 | SEC-01 | Phase 1 | Complete |
 | SEC-02 | Phase 1 | Complete |
-| PERF-01 | Phase 1 | Pending |
+| PERF-01 | Phase 1 | Complete |
 | API-01 | Phase 1 | Complete |
 | API-02 | Phase 1 | Complete |
 | TEST-01 | Phase 1 | Pending |
