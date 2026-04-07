@@ -12,7 +12,7 @@ A single-phase fix-and-polish pass on an existing REST API + Next.js task tracke
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Fix, Harden & Polish** - Correct all bugs, clear tech debt, harden security, and extend test coverage across the existing codebase
+- [x] **Phase 1: Fix, Harden & Polish** - Correct all bugs, clear tech debt, harden security, and extend test coverage across the existing codebase (completed 2026-04-07)
 
 ## Phase Details
 
@@ -33,7 +33,7 @@ Plans:
 - [x] 01-02-PLAN.md — Backend service fixes: BUG-01 priority sort, BUG-02 atomicity, DEBT-01/02/04
 - [x] 01-03-PLAN.md — Security and typing: SEC-01 UUID validation, SEC-02 CORS, DEBT-03 Express augmentation
 - [x] 01-04-PLAN.md — Typeahead endpoint and frontend migration: PERF-01
-- [ ] 01-05-PLAN.md — Test coverage: TEST-01 priority sort, TEST-02 atomicity rollback, TEST-03 pagination
+- [x] 01-05-PLAN.md — Test coverage: TEST-01 priority sort, TEST-02 atomicity rollback, TEST-03 pagination
 
 **UI hint**: yes
 
@@ -44,4 +44,4 @@ Phases execute in numeric order: 1
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Fix, Harden & Polish | 4/5 | In Progress|  |
+| 1. Fix, Harden & Polish | 5/5 | Complete   | 2026-04-07 |

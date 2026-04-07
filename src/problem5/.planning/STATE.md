@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 01-fix-harden-polish-04-PLAN.md
-last_updated: "2026-04-07T05:11:25.827Z"
+stopped_at: Completed 01-fix-harden-polish-05-PLAN.md
+last_updated: "2026-04-07T05:15:13.096Z"
 last_activity: 2026-04-07 — Roadmap created; all 15 v1 requirements mapped to Phase 1
 progress:
   total_phases: 1
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 5
-  completed_plans: 4
-  percent: 80
+  completed_plans: 5
+  percent: 100
 ---
 
 # Project State
@@ -56,6 +56,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01-fix-harden-polish P02 | 35 | 2 tasks | 4 files |
 | Phase 01-fix-harden-polish P03 | 15 | 2 tasks | 5 files |
 | Phase 01-fix-harden-polish P04 | 15 | 2 tasks | 5 files |
+| Phase 01-fix-harden-polish P05 | 8 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,8 @@ Recent decisions affecting current work:
 - [Phase 01-fix-harden-polish]: UUID_REGEX validates UUID v4 specifically on X-Request-Id — rejects non-UUID values to prevent log poisoning (SEC-01)
 - [Phase 01-fix-harden-polish]: CORS fallback 'http://localhost:3001' matches docker-compose frontend port — dev works without ALLOWED_ORIGIN env var (SEC-02)
 - [Phase 01-fix-harden-polish]: PERF-01: /api/users/search endpoint returns slim {id,name,email} subset with fixed take:20; /search route placed before /:id to prevent Express routing conflict
+- [Phase 01-fix-harden-polish]: TEST-01 mocks prisma.\ not findMany because sortBy=priority uses raw SQL CASE WHEN via "
+- [Phase 01-fix-harden-polish]: Added \ to Prisma mock in setup.ts — essential for any test covering the raw-SQL priority sort code path
 
 ### Pending Todos
 
@@ -91,6 +94,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-07T05:11:25.824Z
-Stopped at: Completed 01-fix-harden-polish-04-PLAN.md
+Last session: 2026-04-07T05:15:13.093Z
+Stopped at: Completed 01-fix-harden-polish-05-PLAN.md
 Resume file: None

@@ -34,9 +34,9 @@
 
 ### Test Coverage — Reliability
 
-- [ ] **TEST-01**: Priority sort correctness covered by test — add backend test asserting correct cross-page ordering when `sortBy=priority`
-- [ ] **TEST-02**: Scoring atomicity tested — add test covering the scenario where `scoreTask` would fail after `updateMany` succeeds, verifying the whole operation rolls back
-- [ ] **TEST-03**: Pagination edge cases covered — add tests for `sortBy=date`, `sortBy=assignee`, and boundary page numbers
+- [x] **TEST-01**: Priority sort correctness covered by test — add backend test asserting correct cross-page ordering when `sortBy=priority`
+- [x] **TEST-02**: Scoring atomicity tested — add test covering the scenario where `scoreTask` would fail after `updateMany` succeeds, verifying the whole operation rolls back
+- [x] **TEST-03**: Pagination edge cases covered — add tests for `sortBy=date`, `sortBy=assignee`, and boundary page numbers
 
 ## v2 Requirements
 
@@ -84,9 +84,9 @@
 | PERF-01 | Phase 1 | Complete |
 | API-01 | Phase 1 | Complete |
 | API-02 | Phase 1 | Complete |
-| TEST-01 | Phase 1 | Pending |
-| TEST-02 | Phase 1 | Pending |
-| TEST-03 | Phase 1 | Pending |
+| TEST-01 | Phase 1 | Complete |
+| TEST-02 | Phase 1 | Complete |
+| TEST-03 | Phase 1 | Complete |
 
 **Coverage:**
 - v1 requirements: 15 total
