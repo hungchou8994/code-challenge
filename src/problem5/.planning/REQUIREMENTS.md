@@ -15,13 +15,13 @@
 
 - [x] **DEBT-01**: `VALID_TRANSITIONS` defined in exactly one place — remove the duplicate in `task.service.ts`, import from `shared/types/task.ts`
 - [x] **DEBT-02**: Service layer uses typed Prisma input types — replace all `any` typings in `task.service.ts` and `user.service.ts` with `Prisma.TaskWhereInput`, `Prisma.TaskOrderByWithRelationInput`, `Prisma.TaskUpdateInput`, etc.
-- [ ] **DEBT-03**: Express `Request` type augmented for correlation ID — module-augment the Express namespace instead of `(req as any).id`
+- [x] **DEBT-03**: Express `Request` type augmented for correlation ID — module-augment the Express namespace instead of `(req as any).id`
 - [x] **DEBT-04**: Redis cache invalidation failures are logged — replace all empty `catch {}` blocks with structured Pino logger calls
 
 ### Security — Hardening
 
-- [ ] **SEC-01**: `X-Request-Id` header validated as UUID before use — reject or ignore values that are not valid UUID format to prevent log poisoning
-- [ ] **SEC-02**: CORS restricted to configured allowed origin — replace `cors()` wildcard with `cors({ origin: process.env.ALLOWED_ORIGIN })`
+- [x] **SEC-01**: `X-Request-Id` header validated as UUID before use — reject or ignore values that are not valid UUID format to prevent log poisoning
+- [x] **SEC-02**: CORS restricted to configured allowed origin — replace `cors()` wildcard with `cors({ origin: process.env.ALLOWED_ORIGIN })`
 
 ### Performance — Scalability
 
@@ -77,10 +77,10 @@
 | BUG-03 | Phase 1 | Complete |
 | DEBT-01 | Phase 1 | Complete |
 | DEBT-02 | Phase 1 | Complete |
-| DEBT-03 | Phase 1 | Pending |
+| DEBT-03 | Phase 1 | Complete |
 | DEBT-04 | Phase 1 | Complete |
-| SEC-01 | Phase 1 | Pending |
-| SEC-02 | Phase 1 | Pending |
+| SEC-01 | Phase 1 | Complete |
+| SEC-02 | Phase 1 | Complete |
 | PERF-01 | Phase 1 | Pending |
 | API-01 | Phase 1 | Complete |
 | API-02 | Phase 1 | Complete |

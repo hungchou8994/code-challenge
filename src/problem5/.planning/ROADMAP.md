@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 - [x] 01-01-PLAN.md — Frontend fixes: BUG-03 timezone, API-01 SSE error UI, API-02 postinstall
 - [x] 01-02-PLAN.md — Backend service fixes: BUG-01 priority sort, BUG-02 atomicity, DEBT-01/02/04
-- [ ] 01-03-PLAN.md — Security and typing: SEC-01 UUID validation, SEC-02 CORS, DEBT-03 Express augmentation
+- [x] 01-03-PLAN.md — Security and typing: SEC-01 UUID validation, SEC-02 CORS, DEBT-03 Express augmentation
 - [ ] 01-04-PLAN.md — Typeahead endpoint and frontend migration: PERF-01
 - [ ] 01-05-PLAN.md — Test coverage: TEST-01 priority sort, TEST-02 atomicity rollback, TEST-03 pagination
 
@@ -44,4 +44,4 @@ Phases execute in numeric order: 1
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Fix, Harden & Polish | 2/5 | In Progress|  |
+| 1. Fix, Harden & Polish | 3/5 | In Progress|  |

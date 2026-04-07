@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 01-fix-harden-polish-02-PLAN.md
-last_updated: "2026-04-07T05:03:25.580Z"
+stopped_at: Completed 01-fix-harden-polish-03-PLAN.md
+last_updated: "2026-04-07T05:07:23.394Z"
 last_activity: 2026-04-07 — Roadmap created; all 15 v1 requirements mapped to Phase 1
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 5
-  completed_plans: 2
-  percent: 40
+  completed_plans: 3
+  percent: 60
 ---
 
 # Project State
@@ -54,6 +54,7 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 | Phase 01-fix-harden-polish P01 | 12 | 3 tasks | 3 files |
 | Phase 01-fix-harden-polish P02 | 35 | 2 tasks | 4 files |
+| Phase 01-fix-harden-polish P03 | 15 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -73,6 +74,9 @@ Recent decisions affecting current work:
 - [Phase 01-fix-harden-polish]: postinstall hook in backend/package.json auto-generates Prisma client on npm install
 - [Phase 01-fix-harden-polish]: BUG-01: Raw SQL CASE WHEN for priority sort — Prisma findMany orderBy does not support raw SQL expressions
 - [Phase 01-fix-harden-polish]: BUG-02: scoreTask(task, tx?) accepts optional tx param so task.service can pass its outer transaction for atomic scoring
+- [Phase 01-fix-harden-polish]: Express @types augmentation at backend/src/@types/express/index.d.ts picked up by tsconfig src/**/* glob — no tsconfig change needed
+- [Phase 01-fix-harden-polish]: UUID_REGEX validates UUID v4 specifically on X-Request-Id — rejects non-UUID values to prevent log poisoning (SEC-01)
+- [Phase 01-fix-harden-polish]: CORS fallback 'http://localhost:3001' matches docker-compose frontend port — dev works without ALLOWED_ORIGIN env var (SEC-02)
 
 ### Pending Todos
 
@@ -85,6 +89,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-07T05:03:25.577Z
-Stopped at: Completed 01-fix-harden-polish-02-PLAN.md
+Last session: 2026-04-07T05:07:23.391Z
+Stopped at: Completed 01-fix-harden-polish-03-PLAN.md
 Resume file: None
