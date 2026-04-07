@@ -14,15 +14,17 @@ describe('correlationIdMiddleware', () => {
     next = vi.fn();
   });
 
-  it('uses X-Request-Id header when present', async () => {
+  const VALID_UUID = '123e4567-e89b-4d3c-a456-426614174000';
+
+  it('uses X-Request-Id header when present and is a valid UUID v4', async () => {
     const { correlationIdMiddleware } = await import('../middleware/correlation-id.js');
 
-    req.headers = { 'x-request-id': 'my-custom-id' };
+    req.headers = { 'x-request-id': VALID_UUID };
 
     correlationIdMiddleware(req as Request, res as Response, next);
 
-    expect((req as any).id).toBe('my-custom-id');
-    expect(res.setHeader).toHaveBeenCalledWith('X-Request-Id', 'my-custom-id');
+    expect(req.id).toBe(VALID_UUID);
+    expect(res.setHeader).toHaveBeenCalledWith('X-Request-Id', VALID_UUID);
     expect(next).toHaveBeenCalled();
   });
 
@@ -33,20 +35,25 @@ describe('correlationIdMiddleware', () => {
 
     correlationIdMiddleware(req as Request, res as Response, next);
 
-    const id = (req as any).id;
+    const id = req.id;
     expect(typeof id).toBe('string');
     expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(res.setHeader).toHaveBeenCalledWith('X-Request-Id', id);
     expect(next).toHaveBeenCalled();
   });
 
-  it('echoes X-Request-Id in response header', async () => {
+  it('generates a fresh UUID when X-Request-Id is not a valid UUID v4 (SEC-01 log poisoning protection)', async () => {
     const { correlationIdMiddleware } = await import('../middleware/correlation-id.js');
 
-    req.headers = { 'x-request-id': 'echo-this' };
+    req.headers = { 'x-request-id': 'not-a-valid-uuid' };
 
     correlationIdMiddleware(req as Request, res as Response, next);
 
-    expect(res.setHeader).toHaveBeenCalledWith('X-Request-Id', 'echo-this');
+    // Must NOT echo the attacker-controlled value
+    expect(req.id).not.toBe('not-a-valid-uuid');
+    // Must be a valid UUID v4 (freshly generated)
+    expect(req.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect(res.setHeader).toHaveBeenCalledWith('X-Request-Id', req.id);
+    expect(next).toHaveBeenCalled();
   });
 });
