@@ -148,7 +148,6 @@ export default function TasksPage() {
           </div>
         </div>
         <TaskForm
-          users={users}
           trigger={
             <Button className="rounded-2xl bg-orange-400 hover:bg-orange-500 text-white font-bold shadow-[0_4px_0_0_rgba(0,0,0,0.15)] hover:shadow-[0_2px_0_0_rgba(0,0,0,0.15)] hover:translate-y-0.5 transition-all border-0 px-5 py-2.5">
               <Plus className="h-4 w-4 mr-1.5" />Add Task
@@ -224,7 +223,6 @@ export default function TasksPage() {
                 )}
                 <TaskForm
                   task={task}
-                  users={users}
                   trigger={
                     <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl hover:bg-sky-100 hover:text-sky-600">
                       <Pencil className="h-4 w-4" />

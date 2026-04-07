@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { ChevronsUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,12 +12,17 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger,
 } from '@/components/ui/select';
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from '@/components/ui/command';
+import { api } from '@/lib/api-client';
 import type { Task } from 'shared/types/task';
-import type { User } from 'shared/types/user';
 
 interface TaskFormProps {
   task?: Task;
-  users: User[];
   trigger: React.ReactNode;
   onSubmit: (data: {
     title: string;
@@ -26,12 +33,16 @@ interface TaskFormProps {
   }) => Promise<unknown>;
 }
 
-export function TaskForm({ task, users, trigger, onSubmit }: TaskFormProps) {
+export function TaskForm({ task, trigger, onSubmit }: TaskFormProps) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState(task?.title ?? '');
   const [description, setDescription] = useState(task?.description ?? '');
   const [priority, setPriority] = useState(task?.priority ?? 'MEDIUM');
   const [assigneeId, setAssigneeId] = useState(task?.assigneeId ?? '');
+  const [selectedUserName, setSelectedUserName] = useState(task?.assignee?.name ?? '');
+
+  const [comboOpen, setComboOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const formatDate = (d?: Date | string) => {
     if (!d) return '';
@@ -40,6 +51,15 @@ export function TaskForm({ task, users, trigger, onSubmit }: TaskFormProps) {
   };
   const [dueDate, setDueDate] = useState(formatDate(task?.dueDate));
   const [loading, setLoading] = useState(false);
+
+  const { data: users = [] } = useQuery({
+    queryKey: ['users', 'search', searchQuery],
+    queryFn: () => api.users.search(searchQuery || undefined),
+    enabled: comboOpen,
+    staleTime: 30_000,
+  });
+
+  const assigneeLabel = assigneeId ? (selectedUserName || 'Unassigned') : 'Unassigned';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,7 +76,7 @@ export function TaskForm({ task, users, trigger, onSubmit }: TaskFormProps) {
       setOpen(false);
       if (!task) {
         setTitle(''); setDescription(''); setPriority('MEDIUM');
-        setAssigneeId(''); setDueDate('');
+        setAssigneeId(''); setSelectedUserName(''); setDueDate('');
       }
     } finally {
       setLoading(false);
@@ -95,21 +115,53 @@ export function TaskForm({ task, users, trigger, onSubmit }: TaskFormProps) {
             </div>
             <div className="space-y-1">
               <Label>Assignee</Label>
-              <Select value={assigneeId || 'none'} onValueChange={v => setAssigneeId(v === 'none' || !v ? '' : v)}>
-                <SelectTrigger>
-                  <span className="truncate">
-                    {assigneeId
-                      ? (users.find(u => u.id === assigneeId)?.name ?? 'Unassigned')
-                      : 'Unassigned'}
-                  </span>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Unassigned</SelectItem>
-                  {users.map(u => (
-                    <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover open={comboOpen} onOpenChange={(o) => { setComboOpen(o); if (!o) setSearchQuery(''); }}>
+                <PopoverTrigger
+                  className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm hover:bg-accent"
+                >
+                  <span className="truncate text-left">{assigneeLabel}</span>
+                  <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50 ml-1" />
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-0" align="start">
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      placeholder="Search users..."
+                      value={searchQuery}
+                      onValueChange={setSearchQuery}
+                    />
+                    <CommandList>
+                      <CommandEmpty>No users found.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem
+                          value="none"
+                          onSelect={() => {
+                            setAssigneeId('');
+                            setSelectedUserName('');
+                            setComboOpen(false);
+                            setSearchQuery('');
+                          }}
+                        >
+                          Unassigned
+                        </CommandItem>
+                        {users.map(u => (
+                          <CommandItem
+                            key={u.id}
+                            value={u.id}
+                            onSelect={() => {
+                              setAssigneeId(u.id);
+                              setSelectedUserName(u.name);
+                              setComboOpen(false);
+                              setSearchQuery('');
+                            }}
+                          >
+                            {u.name}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
           <div className="space-y-1">
