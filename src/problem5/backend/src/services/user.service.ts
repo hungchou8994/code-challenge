@@ -42,6 +42,26 @@ export const userService = {
     };
   },
 
+  async search(q?: string): Promise<Array<{ id: string; name: string; email: string }>> {
+    const where: Prisma.UserWhereInput = q
+      ? {
+          OR: [
+            { name: { contains: q, mode: 'insensitive' } },
+            { email: { contains: q, mode: 'insensitive' } },
+          ],
+        }
+      : {};
+
+    const users = await prisma.user.findMany({
+      where,
+      orderBy: { name: 'asc' },
+      take: 20,
+      select: { id: true, name: true, email: true },
+    });
+
+    return users;
+  },
+
   async getById(id: string) {
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundError('User', id);

@@ -22,6 +22,11 @@ export const userQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(1000).optional(),
 });
 
+export const userSearchSchema = z.object({
+  q: z.string().optional(),
+});
+
 export type CreateUserBody = z.infer<typeof createUserSchema>;
 export type UpdateUserBody = z.infer<typeof updateUserSchema>;
 export type UserQueryParams = z.infer<typeof userQuerySchema>;
+export type UserSearchParams = z.infer<typeof userSearchSchema>;
