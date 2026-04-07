@@ -71,11 +71,11 @@ export default function TasksPage() {
   const total = tasksResult?.total ?? 0;
   const totalPages = tasksResult?.totalPages ?? 1;
 
-  const { data: usersResult } = useQuery({
-    queryKey: ['users', 'all'],
-    queryFn: () => api.users.listAll(),
+  const { data: users = [] } = useQuery({
+    queryKey: ['users', 'search', ''],
+    queryFn: () => api.users.search() as Promise<import('shared/types/user').User[]>,
+    staleTime: 60_000,
   });
-  const users = usersResult?.data ?? [];
 
   const createMutation = useMutation({
     mutationFn: api.tasks.create,

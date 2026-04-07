@@ -56,6 +56,11 @@ export const api = {
     listAll: (): Promise<PaginatedResponse<User>> =>
       request('/api/users?limit=1000'),
 
+    search: (q?: string): Promise<Array<{ id: string; name: string; email: string }>> => {
+      const qs = q ? `?q=${encodeURIComponent(q)}` : '';
+      return request(`/api/users/search${qs}`);
+    },
+
     get: (id: string): Promise<User> =>
       request(`/api/users/${id}`),
 
