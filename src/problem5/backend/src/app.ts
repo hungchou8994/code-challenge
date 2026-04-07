@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
@@ -13,7 +13,7 @@ import { leaderboardRouter } from './routes/leaderboard.routes.js';
 const app = express();
 
 const httpLogger = pinoHttp({
-  genReqId: (req: any) => req.id,
+  genReqId: (req: Request) => req.id,
   transport: process.env.NODE_ENV !== 'production'
     ? { target: 'pino-pretty', options: { colorize: true, translateTime: 'HH:MM:ss.l' } }
     : undefined,
