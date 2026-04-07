@@ -10,6 +10,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 export default function LeaderboardPage() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isError, setIsError] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -24,6 +25,7 @@ export default function LeaderboardPage() {
 
     es.onerror = () => {
       setIsLoading(false);
+      setIsError(true);
     };
 
     return () => {
@@ -52,6 +54,10 @@ export default function LeaderboardPage() {
 
       {isLoading ? (
         <p className="text-muted-foreground">Connecting to live feed...</p>
+      ) : isError ? (
+        <p className="text-sm text-red-500 font-semibold">
+          Unable to connect to live feed. Refresh to retry.
+        </p>
       ) : (
         <LeaderboardTable entries={entries} />
       )}
