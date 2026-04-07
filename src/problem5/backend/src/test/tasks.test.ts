@@ -524,6 +524,174 @@ describe('DELETE /api/tasks/:id — force delete DONE task', () => {
   });
 });
 
+describe('GET /api/tasks — priority sort (TEST-01)', () => {
+  // The sortBy=priority code path uses prisma.$queryRaw with a CASE WHEN expression,
+  // NOT prisma.task.findMany. We mock $queryRaw and verify it was called (meaning raw SQL
+  // was used), and check that the response is correctly shaped.
+  it('uses CASE WHEN semantic ordering for sortBy=priority (not lexicographic)', async () => {
+    const rawTaskHigh = {
+      id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      title: 'Build feature',
+      description: null,
+      status: 'IN_PROGRESS',
+      priority: 'HIGH',
+      assigneeId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      dueDate: new Date(futureDueDate),
+      createdAt: new Date('2024-01-01'),
+      updatedAt: new Date('2024-01-01'),
+      assignee_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      assignee_name: 'Alice Smith',
+      assignee_email: 'alice@example.com',
+    };
+    const rawTaskLow = {
+      ...rawTaskHigh,
+      id: 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      priority: 'LOW',
+    };
 
+    mockPrisma.task.count.mockResolvedValue(2);
+    mockPrisma.$queryRaw.mockResolvedValue([rawTaskHigh, rawTaskLow]);
 
+    const res = await request(app).get('/api/tasks?sortBy=priority&sortOrder=desc');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(2);
+
+    // Assert $queryRaw was invoked (proving raw SQL CASE WHEN path was used)
+    expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+
+    // Assert task.findMany was NOT called for the priority sort path
+    expect(mockPrisma.task.findMany).not.toHaveBeenCalled();
+
+    // Assert the raw SQL template literal contains CASE WHEN (checks the actual SQL sent)
+    const queryRawCall = mockPrisma.$queryRaw.mock.calls[0][0];
+    const sqlString = JSON.stringify(queryRawCall);
+    expect(sqlString).toMatch(/CASE|case/i);
+  });
+
+  it('uses CASE WHEN semantic ordering for sortBy=priority ascending', async () => {
+    const rawTask = {
+      id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      title: 'Build feature',
+      description: null,
+      status: 'IN_PROGRESS',
+      priority: 'LOW',
+      assigneeId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      dueDate: new Date(futureDueDate),
+      createdAt: new Date('2024-01-01'),
+      updatedAt: new Date('2024-01-01'),
+      assignee_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      assignee_name: 'Alice Smith',
+      assignee_email: 'alice@example.com',
+    };
+
+    mockPrisma.task.count.mockResolvedValue(1);
+    mockPrisma.$queryRaw.mockResolvedValue([rawTask]);
+
+    const res = await request(app).get('/api/tasks?sortBy=priority&sortOrder=asc');
+
+    expect(res.status).toBe(200);
+
+    // $queryRaw called → raw SQL CASE WHEN path used
+    expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.task.findMany).not.toHaveBeenCalled();
+
+    // The SQL template contains CASE (semantic ordering)
+    const queryRawCall = mockPrisma.$queryRaw.mock.calls[0][0];
+    const sqlString = JSON.stringify(queryRawCall);
+    expect(sqlString).toMatch(/CASE|case/i);
+  });
+});
+
+describe('PATCH /api/tasks/:id — scoring atomicity (TEST-02)', () => {
+  it('returns 500 and does not expose DONE status when scoreTask throws inside transaction', async () => {
+    const inProgressTask = { ...sampleTask, status: 'IN_PROGRESS' };
+    const doneTask = { ...sampleTask, status: 'DONE', assigneeId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' };
+
+    mockPrisma.task.findUnique
+      .mockResolvedValueOnce(inProgressTask)  // initial getById
+      .mockResolvedValueOnce(doneTask);        // findUnique inside tx after updateMany
+    mockPrisma.task.updateMany.mockResolvedValue({ count: 1 });
+
+    // Simulate scoreTask failure: scoreEvent.create throws
+    mockPrisma.scoreEvent.create.mockRejectedValue(new Error('DB write failed during scoring'));
+
+    // Transaction mock executes fn() eagerly — error bubbles up as unhandled
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
+
+    const res = await request(app)
+      .patch('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
+      .send({ status: 'DONE' });
+
+    // The transaction threw — response must NOT be 200
+    expect(res.status).not.toBe(200);
+    // Task must NOT appear as DONE in any 200 response body
+    if (res.body?.status) {
+      expect(res.body.status).not.toBe('DONE');
+    }
+    // scoreEvent.create was attempted (inside tx) but caused the error
+    expect(mockPrisma.scoreEvent.create).toHaveBeenCalledTimes(1);
+    // productivityScore.upsert must NOT have been called (thrown before reaching it)
+    expect(mockPrisma.productivityScore.upsert).not.toHaveBeenCalled();
+  });
+
+  it('does not persist ScoreEvent when concurrent modification is detected inside transaction', async () => {
+    const inProgressTask = { ...sampleTask, status: 'IN_PROGRESS' };
+    mockPrisma.task.findUnique.mockResolvedValue(inProgressTask);
+    // updateMany returns count=0 → ConflictError → transaction rolls back
+    mockPrisma.task.updateMany.mockResolvedValue({ count: 0 });
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
+
+    const res = await request(app)
+      .patch('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
+      .send({ status: 'DONE' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('CONCURRENT_MODIFICATION');
+    // ScoreEvent must never have been created
+    expect(mockPrisma.scoreEvent.create).not.toHaveBeenCalled();
+    expect(mockPrisma.productivityScore.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/tasks — pagination and sort edge cases (TEST-03)', () => {
+  it('returns 400 when page=0 (below minimum)', async () => {
+    const res = await request(app).get('/api/tasks?page=0');
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns empty data array when page exceeds totalPages', async () => {
+    // 2 total tasks, limit=20 → totalPages=1; requesting page=5 → skip=80 → findMany returns []
+    mockPrisma.task.count.mockResolvedValue(2);
+    mockPrisma.task.findMany.mockResolvedValue([]);
+
+    const res = await request(app).get('/api/tasks?page=5');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(0);
+    expect(res.body.total).toBe(2);
+    expect(res.body.page).toBe(5);
+  });
+
+  it('uses dueDate orderBy for sortBy=date', async () => {
+    mockPrisma.task.count.mockResolvedValue(1);
+    mockPrisma.task.findMany.mockResolvedValue([sampleTask]);
+
+    await request(app).get('/api/tasks?sortBy=date&sortOrder=asc');
+
+    const findManyCall = mockPrisma.task.findMany.mock.calls[0][0];
+    expect(findManyCall.orderBy).toEqual({ dueDate: 'asc' });
+  });
+
+  it('uses assignee name orderBy for sortBy=assignee', async () => {
+    mockPrisma.task.count.mockResolvedValue(1);
+    mockPrisma.task.findMany.mockResolvedValue([sampleTask]);
+
+    await request(app).get('/api/tasks?sortBy=assignee&sortOrder=desc');
+
+    const findManyCall = mockPrisma.task.findMany.mock.calls[0][0];
+    expect(findManyCall.orderBy).toEqual({ assignee: { name: 'desc' } });
+  });
+});
 

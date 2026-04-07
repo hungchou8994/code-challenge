@@ -3,6 +3,7 @@
 vi.mock('../lib/prisma', () => ({
   prisma: {
     $transaction: vi.fn(),
+    $queryRaw: vi.fn(),
     user: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
