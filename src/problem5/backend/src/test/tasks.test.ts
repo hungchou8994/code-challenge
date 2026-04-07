@@ -177,8 +177,9 @@ describe('PATCH /api/tasks/:id — status transitions', () => {
     const inProgressTask = { ...sampleTask, status: 'IN_PROGRESS' };
     mockPrisma.task.findUnique
       .mockResolvedValueOnce(sampleTask)       // getById
-      .mockResolvedValueOnce(inProgressTask);  // after updateMany
+      .mockResolvedValueOnce(inProgressTask);  // re-fetch inside tx after updateMany
     mockPrisma.task.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
 
     const res = await request(app)
       .patch('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
@@ -238,6 +239,7 @@ describe('PATCH /api/tasks/:id — status transitions', () => {
     const inProgressTask = { ...sampleTask, status: 'IN_PROGRESS' };
     mockPrisma.task.findUnique.mockResolvedValue(inProgressTask);
     mockPrisma.task.updateMany.mockResolvedValue({ count: 0 }); // concurrent write won the race
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
 
     const res = await request(app)
       .patch('/api/tasks/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')

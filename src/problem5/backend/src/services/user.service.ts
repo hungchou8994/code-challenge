@@ -1,13 +1,17 @@
+import pino from 'pino';
 import { prisma } from '../lib/prisma.js';
+import type { Prisma } from '../generated/prisma/client/client.js';
 import { NotFoundError, ConflictError } from '../middleware/error-handler.js';
 import { leaderboardService, LEADERBOARD_CACHE_KEY } from './leaderboard.service.js';
 import { redisClient } from '../lib/redis.js';
 import { sseManager } from '../lib/sse-manager.js';
 import type { CreateUserBody, UpdateUserBody, UserQueryParams } from '../schemas/user.schemas.js';
 
+const logger = pino({ name: 'user-service' });
+
 export const userService = {
   async getAll(query: UserQueryParams = {}) {
-    const where: any = {};
+    const where: Prisma.UserWhereInput = {};
     if (query.search) {
       where.name = { contains: query.search, mode: 'insensitive' };
     }
@@ -54,7 +58,11 @@ export const userService = {
       where: { id },
       data,
     });
-    try { await redisClient.del(LEADERBOARD_CACHE_KEY); } catch {}
+    try {
+      await redisClient.del(LEADERBOARD_CACHE_KEY);
+    } catch (err) {
+      logger.warn({ err }, 'Redis cache invalidation failed');
+    }
     return updated;
   },
 
@@ -80,7 +88,11 @@ export const userService = {
       await tx.user.delete({ where: { id } });
     });
 
-    try { await redisClient.del(LEADERBOARD_CACHE_KEY); } catch {}
+    try {
+      await redisClient.del(LEADERBOARD_CACHE_KEY);
+    } catch (err) {
+      logger.warn({ err }, 'Redis cache invalidation failed');
+    }
     const updatedRankings = await leaderboardService.getRankings();
     sseManager.broadcast(updatedRankings);
   },

@@ -1,29 +1,95 @@
+import pino from 'pino';
 import { prisma } from '../lib/prisma.js';
+import { Prisma } from '../generated/prisma/client/client.js';
 import { NotFoundError, ConflictError } from '../middleware/error-handler.js';
 import { leaderboardService, LEADERBOARD_CACHE_KEY } from './leaderboard.service.js';
 import { redisClient } from '../lib/redis.js';
 import { sseManager } from '../lib/sse-manager.js';
+import { VALID_TRANSITIONS } from '../../../shared/types/task.js';
 import type { CreateTaskBody, UpdateTaskBody, TaskQueryParams } from '../schemas/task.schemas.js';
 
-const VALID_TRANSITIONS: Record<string, string[]> = {
-  TODO: ['IN_PROGRESS'],
-  IN_PROGRESS: ['DONE'],
-  DONE: [],
-};
+const logger = pino({ name: 'task-service' });
 
 export const taskService = {
   async getAll(query: TaskQueryParams) {
-    const where: any = {};
+    const where: Prisma.TaskWhereInput = {};
     if (query.status) where.status = query.status;
     if (query.assigneeId) where.assigneeId = query.assigneeId;
 
-    let orderBy: any = { createdAt: 'desc' };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const skip = (page - 1) * limit;
+
+    if (query.sortBy === 'priority') {
+      // Use raw SQL for semantic priority ordering: HIGH(3) > MEDIUM(2) > LOW(1)
+      // This avoids cross-page lexicographic sort bug (BUG-01)
+      const dir = Prisma.raw(query.sortOrder === 'asc' ? 'ASC' : 'DESC');
+      const conditions: Prisma.Sql[] = [];
+      if (query.status) conditions.push(Prisma.sql`t.status = ${query.status}`);
+      if (query.assigneeId) conditions.push(Prisma.sql`t."assigneeId" = ${query.assigneeId}`);
+      const whereClause =
+        conditions.length > 0
+          ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`
+          : Prisma.sql``;
+
+      const [total, tasks] = await Promise.all([
+        prisma.task.count({ where }),
+        prisma.$queryRaw<
+          Array<{
+            id: string;
+            title: string;
+            description: string | null;
+            status: string;
+            priority: string;
+            assigneeId: string | null;
+            dueDate: Date;
+            createdAt: Date;
+            updatedAt: Date;
+            assignee_id: string | null;
+            assignee_name: string | null;
+            assignee_email: string | null;
+          }>
+        >`
+          SELECT t.id, t.title, t.description, t.status, t.priority,
+                 t."assigneeId", t."dueDate", t."createdAt", t."updatedAt",
+                 u.id AS assignee_id, u.name AS assignee_name, u.email AS assignee_email
+          FROM "Task" t
+          LEFT JOIN "User" u ON t."assigneeId" = u.id
+          ${whereClause}
+          ORDER BY CASE t.priority
+            WHEN 'HIGH' THEN 3
+            WHEN 'MEDIUM' THEN 2
+            WHEN 'LOW' THEN 1
+            ELSE 0
+          END ${dir}
+          LIMIT ${limit} OFFSET ${skip}
+        `,
+      ]);
+
+      const mappedTasks = tasks.map((t) => ({
+        id: t.id,
+        title: t.title,
+        description: t.description,
+        status: t.status as Prisma.TaskWhereInput['status'],
+        priority: t.priority as Prisma.TaskWhereInput['priority'],
+        assigneeId: t.assigneeId,
+        dueDate: t.dueDate,
+        createdAt: t.createdAt,
+        updatedAt: t.updatedAt,
+        assignee: t.assignee_id
+          ? { id: t.assignee_id, name: t.assignee_name!, email: t.assignee_email! }
+          : null,
+      }));
+
+      return { data: mappedTasks, total, page, limit, totalPages: Math.ceil(total / limit) };
+    }
+
+    let orderBy: Prisma.TaskOrderByWithRelationInput | Prisma.TaskOrderByWithRelationInput[] = {
+      createdAt: 'desc',
+    };
     if (query.sortBy) {
       const order = query.sortOrder || 'asc';
       switch (query.sortBy) {
-        case 'priority':
-          orderBy = { priority: order };
-          break;
         case 'dueDate':
         case 'date':
           orderBy = { dueDate: order };
@@ -36,10 +102,6 @@ export const taskService = {
       }
     }
 
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
-    const skip = (page - 1) * limit;
-
     const [total, tasks] = await Promise.all([
       prisma.task.count({ where }),
       prisma.task.findMany({
@@ -50,12 +112,6 @@ export const taskService = {
         include: { assignee: { select: { id: true, name: true, email: true } } },
       }),
     ]);
-
-    if (query.sortBy === 'priority') {
-      const priorityOrder: Record<string, number> = { HIGH: 3, MEDIUM: 2, LOW: 1 };
-      const sortDir = query.sortOrder === 'asc' ? 1 : -1;
-      tasks.sort((a, b) => ((priorityOrder[a.priority] || 0) - (priorityOrder[b.priority] || 0)) * sortDir);
-    }
 
     return {
       data: tasks,
@@ -98,8 +154,8 @@ export const taskService = {
     const existing = await taskService.getById(id);
 
     if (data.status && data.status !== existing.status) {
-      const allowed = VALID_TRANSITIONS[existing.status] || [];
-      if (!allowed.includes(data.status)) {
+      const allowed = VALID_TRANSITIONS[existing.status as keyof typeof VALID_TRANSITIONS] || [];
+      if (!allowed.includes(data.status as (typeof allowed)[number])) {
         throw new ConflictError(
           'INVALID_TRANSITION',
           `Cannot transition from ${existing.status} to ${data.status}. Allowed transitions: ${allowed.length > 0 ? allowed.join(', ') : 'none (terminal state)'}`
@@ -107,7 +163,8 @@ export const taskService = {
       }
 
       if (data.status === 'DONE') {
-        const currentAssigneeId = data.assigneeId !== undefined ? data.assigneeId : existing.assigneeId;
+        const currentAssigneeId =
+          data.assigneeId !== undefined ? data.assigneeId : existing.assigneeId;
         if (!currentAssigneeId) {
           throw new ConflictError(
             'UNASSIGNED_COMPLETION',
@@ -123,7 +180,7 @@ export const taskService = {
       if (!assignee) throw new NotFoundError('User', data.assigneeId);
     }
 
-    const updateData: any = {};
+    const updateData: Prisma.TaskUncheckedUpdateInput = {};
     if (data.title !== undefined) updateData.title = data.title;
     if (data.description !== undefined) updateData.description = data.description;
     if (data.status !== undefined) updateData.status = data.status;
@@ -131,25 +188,48 @@ export const taskService = {
     if (data.assigneeId !== undefined) updateData.assigneeId = data.assigneeId;
     if (data.dueDate !== undefined) updateData.dueDate = new Date(data.dueDate);
 
-    let updated: any;
+    let updated: Awaited<ReturnType<typeof prisma.task.findUnique>> = null;
 
     if (data.status && data.status !== existing.status) {
       // Use a conditional updateMany to prevent double-scoring when two concurrent
       // requests both try to transition the same task (e.g. both mark IN_PROGRESS → DONE).
       // The WHERE { status: existing.status } guard means only the first writer wins.
-      const result = await prisma.task.updateMany({
-        where: { id, status: existing.status },
-        data: updateData,
-      });
-      if (result.count === 0) {
-        throw new ConflictError(
-          'CONCURRENT_MODIFICATION',
-          'Task was modified by a concurrent request. Please refresh and retry.'
-        );
-      }
-      updated = await prisma.task.findUnique({
-        where: { id },
-        include: { assignee: { select: { id: true, name: true, email: true } } },
+      // BUG-02: wrap updateMany + scoreTask in a single outer transaction for atomicity.
+      await prisma.$transaction(async (tx) => {
+        const result = await tx.task.updateMany({
+          where: { id, status: existing.status },
+          data: updateData,
+        });
+        if (result.count === 0) {
+          throw new ConflictError(
+            'CONCURRENT_MODIFICATION',
+            'Task was modified by a concurrent request. Please refresh and retry.'
+          );
+        }
+        // Re-fetch inside tx to get the latest state with assignee relation
+        const updatedInTx = await tx.task.findUnique({
+          where: { id },
+          include: { assignee: { select: { id: true, name: true, email: true } } },
+        });
+        if (!updatedInTx) throw new NotFoundError('Task', id);
+        updated = updatedInTx;
+
+        // Score the task inside the same transaction when transitioning to DONE (D-04)
+        if (
+          data.status === 'DONE' &&
+          existing.status !== 'DONE' &&
+          updatedInTx.assigneeId
+        ) {
+          await leaderboardService.scoreTask(
+            {
+              id: updatedInTx.id,
+              assigneeId: updatedInTx.assigneeId,
+              priority: updatedInTx.priority,
+              dueDate: updatedInTx.dueDate,
+            },
+            tx
+          );
+        }
       });
     } else {
       updated = await prisma.task.update({
@@ -159,14 +239,13 @@ export const taskService = {
       });
     }
 
-    if (data.status === 'DONE' && existing.status !== 'DONE' && updated.assigneeId) {
-      await leaderboardService.scoreTask({
-        id: updated.id,
-        assigneeId: updated.assigneeId,
-        priority: updated.priority,
-        dueDate: updated.dueDate,
-      });
-      try { await redisClient.del(LEADERBOARD_CACHE_KEY); } catch {}
+    // Side effects OUTSIDE the transaction (D-04): cache invalidation + SSE broadcast
+    if (data.status === 'DONE' && existing.status !== 'DONE' && updated?.assigneeId) {
+      try {
+        await redisClient.del(LEADERBOARD_CACHE_KEY);
+      } catch (err) {
+        logger.warn({ err }, 'Redis cache invalidation failed');
+      }
       const updatedRankings = await leaderboardService.getRankings();
       sseManager.broadcast(updatedRankings);
     }
@@ -223,8 +302,12 @@ export const taskService = {
         }
       });
 
-      // 4. Invalidate leaderboard cache and broadcast fresh rankings
-      try { await redisClient.del(LEADERBOARD_CACHE_KEY); } catch {}
+      // Invalidate leaderboard cache and broadcast fresh rankings
+      try {
+        await redisClient.del(LEADERBOARD_CACHE_KEY);
+      } catch (err) {
+        logger.warn({ err }, 'Redis cache invalidation failed');
+      }
       const updatedRankings = await leaderboardService.getRankings();
       sseManager.broadcast(updatedRankings);
 
