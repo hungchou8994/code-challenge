@@ -21,7 +21,9 @@ const httpLogger = pinoHttp({
 
 app.use(helmet());
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGIN || 'http://localhost:3001',
+  origin: process.env.NODE_ENV === 'production'
+    ? (process.env.ALLOWED_ORIGIN || 'http://localhost:3001')
+    : '*',
 }));
 app.use(correlationIdMiddleware);
 app.use(httpLogger);
