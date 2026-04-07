@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Select, SelectContent, SelectItem, SelectTrigger,
 } from '@/components/ui/select';
@@ -10,13 +11,13 @@ import {
 } from '@/components/ui/command';
 import { Button } from '@/components/ui/button';
 import { Check, ChevronsUpDown } from 'lucide-react';
-import type { User } from 'shared/types/user';
+import { api } from '@/lib/api-client';
 
 interface FilterBarProps {
   status: string;
   assigneeId: string;
-  users: User[];
-  onChange: (filters: { status: string; assigneeId: string }) => void;
+  assigneeName: string;
+  onChange: (filters: { status: string; assigneeId: string; assigneeName: string }) => void;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -26,15 +27,22 @@ const STATUS_LABEL: Record<string, string> = {
   DONE: 'Done',
 };
 
-export function FilterBar({ status, assigneeId, users, onChange }: FilterBarProps) {
+export function FilterBar({ status, assigneeId, assigneeName, onChange }: FilterBarProps) {
   const [open, setOpen] = useState(false);
-  const currentAssignee = users.find(u => u.id === assigneeId);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const { data: users = [] } = useQuery({
+    queryKey: ['users', 'search', searchQuery],
+    queryFn: () => api.users.search(searchQuery || undefined),
+    enabled: open,
+    staleTime: 30_000,
+  });
 
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Select
         value={status || 'all'}
-        onValueChange={(v) => onChange({ status: !v || v === 'all' ? '' : v, assigneeId })}
+        onValueChange={(v) => onChange({ status: !v || v === 'all' ? '' : v, assigneeId, assigneeName })}
       >
         <SelectTrigger className="w-36">
           <span>{STATUS_LABEL[status || 'all']}</span>
@@ -47,26 +55,31 @@ export function FilterBar({ status, assigneeId, users, onChange }: FilterBarProp
         </SelectContent>
       </Select>
 
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setSearchQuery(''); }}>
         <PopoverTrigger
           className="inline-flex h-9 w-44 items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm hover:bg-accent hover:text-accent-foreground focus:outline-none"
           aria-expanded={open}
         >
           <span className="truncate">
-            {currentAssignee ? currentAssignee.name : 'All assignees'}
+            {assigneeName || 'All assignees'}
           </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </PopoverTrigger>
         <PopoverContent className="w-52 p-0" side="bottom" align="start">
-          <Command>
-            <CommandInput placeholder="Search assignee..." />
+          <Command shouldFilter={false}>
+            <CommandInput
+              placeholder="Search assignee..."
+              value={searchQuery}
+              onValueChange={setSearchQuery}
+            />
             <CommandList>
               <CommandEmpty>No assignee found.</CommandEmpty>
               <CommandGroup>
                 <CommandItem
                   value="all"
                   onSelect={() => {
-                    onChange({ status, assigneeId: '' });
+                    onChange({ status, assigneeId: '', assigneeName: '' });
+                    setSearchQuery('');
                     setOpen(false);
                   }}
                 >
@@ -76,9 +89,14 @@ export function FilterBar({ status, assigneeId, users, onChange }: FilterBarProp
                 {users.map((u) => (
                   <CommandItem
                     key={u.id}
-                    value={u.name}
+                    value={u.id}
                     onSelect={() => {
-                      onChange({ status, assigneeId: u.id === assigneeId ? '' : u.id });
+                      onChange({
+                        status,
+                        assigneeId: u.id === assigneeId ? '' : u.id,
+                        assigneeName: u.id === assigneeId ? '' : u.name,
+                      });
+                      setSearchQuery('');
                       setOpen(false);
                     }}
                   >
@@ -96,7 +114,7 @@ export function FilterBar({ status, assigneeId, users, onChange }: FilterBarProp
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => onChange({ status: '', assigneeId: '' })}
+          onClick={() => onChange({ status: '', assigneeId: '', assigneeName: '' })}
         >
           Clear filters
         </Button>

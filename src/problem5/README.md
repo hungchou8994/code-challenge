@@ -107,14 +107,16 @@ npm run test -w backend
 cd backend && npm test
 ```
 
-Expected output: **57 tests passing** across 4 test files:
+Expected output: **74 tests passing** across 6 test files:
 
 | File | Tests | Coverage |
 |------|-------|---------|
-| `users.test.ts` | 13 | CRUD, validation, conflict |
-| `tasks.test.ts` | 28 | Status transitions, scoring, cache invalidation |
-| `leaderboard.test.ts` | 8 | Rankings, health check, cache hit/miss/degradation |
-| `sse.test.ts` | 8 | SseManager addClient / removeClient / broadcast |
+| `users.test.ts` | 15 | CRUD, validation, conflict |
+| `tasks.test.ts` | 38 | Status transitions, scoring, cache invalidation, atomicity, priority sort, pagination |
+| `leaderboard.test.ts` | 8 | Rankings, cache hit/miss/degradation |
+| `sse.test.ts` | 5 | SseManager addClient / removeClient / broadcast |
+| `health.test.ts` | 5 | DB + Redis health, degraded status, uptime field |
+| `correlation-id.test.ts` | 3 | UUID passthrough, generation, log-poisoning guard |
 
 ---
 
@@ -172,7 +174,8 @@ Every response includes an `X-Request-Id` header for request tracing.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/users` | List all users |
+| `GET` | `/api/users` | List all users (paginated) |
+| `GET` | `/api/users/search?q=<name>` | Typeahead search — returns up to 20 users matching name (case-insensitive) |
 | `GET` | `/api/users/:id` | Get user by ID |
 | `POST` | `/api/users` | Create user |
 | `PUT` | `/api/users/:id` | Update user |
@@ -231,13 +234,15 @@ Points are awarded when a task transitions to `DONE`.
 | Modifier | Points |
 |----------|--------|
 | Completed before due date | +5 |
+| Completed on due date | ±0 (on time) |
 | Completed after due date  | -3 |
 
 **Constraints:**
 - Status transitions are forward-only: `TODO → IN_PROGRESS → DONE`
 - A task must be assigned to a user before it can be marked `DONE`
-- `DONE` is a terminal state — no reversals
+- `DONE` is a terminal state — no reversals; assignee cannot be changed after completion
 - Scores are calculated server-side only; clients cannot submit score values
+- Deadline comparison is date-only (time-of-day is ignored)
 
 ---
 

@@ -49,16 +49,16 @@ const PAGE_SIZE = 10;
 
 export default function TasksPage() {
   const queryClient = useQueryClient();
-  const [filters, setFilters] = useState({ status: '', assigneeId: '' });
+  const [filters, setFilters] = useState({ status: '', assigneeId: '', assigneeName: '' });
   const [page, setPage] = useState(1);
 
-  const handleFilterChange = (newFilters: { status: string; assigneeId: string }) => {
+  const handleFilterChange = (newFilters: { status: string; assigneeId: string; assigneeName: string }) => {
     setFilters(newFilters);
     setPage(1);
   };
 
   const { data: tasksResult, isLoading } = useQuery({
-    queryKey: ['tasks', filters, page],
+    queryKey: ['tasks', { status: filters.status, assigneeId: filters.assigneeId }, page],
     queryFn: () => api.tasks.list({
       status: filters.status || undefined,
       assigneeId: filters.assigneeId || undefined,
@@ -70,12 +70,6 @@ export default function TasksPage() {
   const tasks = tasksResult?.data ?? [];
   const total = tasksResult?.total ?? 0;
   const totalPages = tasksResult?.totalPages ?? 1;
-
-  const { data: users = [] } = useQuery({
-    queryKey: ['users', 'search', ''],
-    queryFn: () => api.users.search() as Promise<import('shared/types/user').User[]>,
-    staleTime: 60_000,
-  });
 
   const createMutation = useMutation({
     mutationFn: api.tasks.create,
@@ -160,7 +154,7 @@ export default function TasksPage() {
       <FilterBar
         status={filters.status}
         assigneeId={filters.assigneeId}
-        users={users}
+        assigneeName={filters.assigneeName}
         onChange={handleFilterChange}
       />
 
