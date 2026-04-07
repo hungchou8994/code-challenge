@@ -176,6 +176,12 @@ export const taskService = {
 
     // Validate that the new assigneeId (if provided) refers to an existing user
     if (data.assigneeId != null) {
+      if (existing.status === 'DONE') {
+        throw new ConflictError(
+          'INVALID_OPERATION',
+          'Cannot change assignee of a completed task. The score has already been awarded.'
+        );
+      }
       const assignee = await prisma.user.findUnique({ where: { id: data.assigneeId } });
       if (!assignee) throw new NotFoundError('User', data.assigneeId);
     }

@@ -25,8 +25,12 @@ export const leaderboardService = {
     const priority = task.priority as TaskPriority;
     const basePoints = PRIORITY_POINTS[priority];
 
-    const isEarly = now < task.dueDate;
-    const isLate = now > task.dueDate;
+    // Compare date parts only (strip time) so completing any time on the due date
+    // counts as "on time" — not early, not late.
+    const nowDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dueDay = new Date(task.dueDate.getFullYear(), task.dueDate.getMonth(), task.dueDate.getDate());
+    const isEarly = nowDay < dueDay;
+    const isLate = nowDay > dueDay;
 
     const bonus = isEarly ? EARLY_BONUS : 0;
     const penalty = isLate ? Math.abs(LATE_PENALTY) : 0;
