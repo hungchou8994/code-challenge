@@ -51,7 +51,7 @@ export function TaskForm({ task, users, trigger, onSubmit }: TaskFormProps) {
         description: description.trim() || undefined,
         priority,
         assigneeId: assigneeId || undefined,
-        dueDate: new Date(dueDate + 'T23:59:59.000Z').toISOString(),
+        dueDate: new Date(dueDate + 'T23:59:59').toISOString(),
       });
       setOpen(false);
       if (!task) {
