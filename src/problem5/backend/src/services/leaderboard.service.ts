@@ -1,18 +1,26 @@
+import pino from 'pino';
 import { prisma } from '../lib/prisma.js';
 import { PRIORITY_POINTS, EARLY_BONUS, LATE_PENALTY } from '../../../shared/constants/scoring.js';
 import type { TaskPriority } from '../../../shared/types/task.js';
 import { redisClient } from '../lib/redis.js';
 
+const logger = pino({ name: 'leaderboard-service' });
+
 export const LEADERBOARD_CACHE_KEY = 'leaderboard:rankings';
 const CACHE_TTL = 60;
 
+type PrismaTxClient = Omit<typeof prisma, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>;
+
 export const leaderboardService = {
-  async scoreTask(task: {
-    id: string;
-    assigneeId: string;
-    priority: string;
-    dueDate: Date;
-  }) {
+  async scoreTask(
+    task: {
+      id: string;
+      assigneeId: string;
+      priority: string;
+      dueDate: Date;
+    },
+    tx?: PrismaTxClient
+  ) {
     const now = new Date();
     const priority = task.priority as TaskPriority;
     const basePoints = PRIORITY_POINTS[priority];
@@ -24,7 +32,8 @@ export const leaderboardService = {
     const penalty = isLate ? Math.abs(LATE_PENALTY) : 0;
     const totalAwarded = basePoints + bonus - penalty;
 
-    await prisma.$transaction(async (tx) => {
+    if (tx) {
+      // Called from within an outer transaction — use tx directly
       await tx.scoreEvent.create({
         data: {
           userId: task.assigneeId,
@@ -48,7 +57,34 @@ export const leaderboardService = {
           tasksCompleted: { increment: 1 },
         },
       });
-    });
+    } else {
+      // Standalone call — wrap in own transaction (backward compatible)
+      await prisma.$transaction(async (innerTx) => {
+        await innerTx.scoreEvent.create({
+          data: {
+            userId: task.assigneeId,
+            taskId: task.id,
+            points: basePoints,
+            bonus,
+            penalty,
+            totalAwarded,
+          },
+        });
+
+        await innerTx.productivityScore.upsert({
+          where: { userId: task.assigneeId },
+          create: {
+            userId: task.assigneeId,
+            totalScore: totalAwarded,
+            tasksCompleted: 1,
+          },
+          update: {
+            totalScore: { increment: totalAwarded },
+            tasksCompleted: { increment: 1 },
+          },
+        });
+      });
+    }
   },
 
   async getRankings() {
@@ -57,7 +93,8 @@ export const leaderboardService = {
       if (cached !== null) {
         return JSON.parse(cached);
       }
-    } catch {
+    } catch (err) {
+      logger.warn({ err }, 'Redis cache read failed');
     }
 
     const users = await prisma.user.findMany({
@@ -83,7 +120,8 @@ export const leaderboardService = {
 
     try {
       await redisClient.set(LEADERBOARD_CACHE_KEY, JSON.stringify(rankings), 'EX', CACHE_TTL);
-    } catch {
+    } catch (err) {
+      logger.warn({ err }, 'Redis cache write failed');
     }
 
     return rankings;
