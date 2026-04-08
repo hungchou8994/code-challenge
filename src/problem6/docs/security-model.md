@@ -2,7 +2,7 @@
 
 This security model defines the authentication and protection mechanisms for the scoreboard API's score submission endpoint. It establishes JWT bearer authentication requirements, anti-cheat and IDOR prevention constraints, transport security controls, rate limiting policy, and mandatory response headers. Together, these controls prevent malicious users from increasing scores without authorization.
 
-**Non-goals:** This security model does not cover client-side XSS mitigations, CSRF protection on non-API routes, OAuth or social login flows, or game-server-to-API trust verification. Those concerns are out of scope for this module.
+**Non-goals:** This security model does not cover client-side XSS mitigations, CSRF protection on non-API routes, OAuth or social login flows, or anti-cheat heuristics beyond the proof-based authorization contract defined below. Those concerns are out of scope for this module.
 
 ### Authentication
 
@@ -18,9 +18,9 @@ This security model defines the authentication and protection mechanisms for the
 
 **S-05:** The server SHALL extract the acting user's identity exclusively from the JWT `sub` claim. The request body MUST NOT contain a writable `userId` or `user_id` field. If the request body supplies either field, the server SHALL ignore or reject it — the identity used for all score operations MUST be the `sub` value from the validated JWT. *(Prevents Insecure Direct Object Reference (IDOR): without this control, an authenticated user could claim to act as another user simply by supplying a different identifier in the request body.)*
 
-**S-06:** The server SHALL store each processed `event_id` nonce with a time-to-live (TTL) at least equal to the maximum score-submission window defined by the JWT TTL (15 minutes). Duplicate submissions presenting an `event_id` that has already been processed within its TTL window SHALL be rejected with `409 Conflict` and error code `ERR_CONFLICT`. *(Prevents replay attacks: a captured valid request cannot be resubmitted to inflate scores, because the server recognises the nonce as already consumed.)*
+**S-06:** The server SHALL enforce idempotency on `event_id` using a durable uniqueness constraint in the authoritative store (for example, `UNIQUE(event_id)` on `score_events`). A short-lived Redis nonce cache MAY be used as an optimisation, but it is not authoritative. Duplicate submissions presenting an `event_id` that has already been accepted SHALL be rejected with `409 Conflict` and error code `ERR_CONFLICT`, even if any cache entry has already expired. *(Prevents replay attacks without risking loss of legitimate events when an in-memory nonce cache expires or a retry happens after a transient failure.)*
 
-**S-07:** The server SHALL validate score increments server-side. The client request body supplies only an `event_id` and an `action_type`; the server looks up and applies the authoritative score delta for that action type. The client MUST NOT supply an absolute `score` value, a numeric `score_increment`, or any other numeric field that directly determines the awarded points. *(Prevents score manipulation by direct value injection: a client cannot award itself an arbitrary number of points by crafting a large numeric value in the request.)*
+**S-07:** The server SHALL require proof that the scored action was actually completed. Each `POST /scores` request MUST include an `action_proof` issued by a trusted action-verification component only after the action succeeds. The proof MUST be bound to the authenticated user (`sub`), `event_id`, `action_type`, and an expiry timestamp; the server SHALL reject the request with `403 Forbidden` and `ERR_FORBIDDEN` if the proof is missing, expired, invalid, already consumed, or does not match the JWT subject and request body. The server SHALL then look up and apply the authoritative score delta for that `action_type`. The client MUST NOT supply an absolute `score` value, a numeric `score_increment`, or any other numeric field that directly determines the awarded points. *(Prevents authenticated users from fabricating completed actions or directly injecting arbitrary point values.)*
 
 ### Transport Security
 
@@ -69,10 +69,11 @@ Rules:
 | Code | HTTP Status | When Returned |
 |------|-------------|---------------|
 | `ERR_UNAUTHORIZED` | 401 | JWT is missing, expired, or invalid — covers any claim validation failure, algorithm mismatch, or `alg:none` rejection |
-| `ERR_FORBIDDEN` | 403 | Token is valid and authentic, but the requesting user lacks permission for the targeted resource; also returned for Origin allowlist rejection on SSE/WebSocket connections |
+| `ERR_FORBIDDEN` | 403 | Token is valid and authentic, but the requesting user is not allowed to perform the requested operation; also returned for invalid or mismatched `action_proof` and for Origin allowlist rejection on SSE/WebSocket connections |
 | `ERR_VALIDATION_FAILED` | 400 | Request body fails schema validation — missing required fields, wrong field types, values outside permitted ranges |
 | `ERR_RATE_LIMITED` | 429 | Per-user submission rate limit exceeded; see `Retry-After` response header for retry guidance |
-| `ERR_CONFLICT` | 409 | Duplicate `event_id` — the same nonce has already been processed within its TTL window |
+| `ERR_CONFLICT` | 409 | Duplicate `event_id` — the same event has already been durably accepted |
+| `ERR_UNAVAILABLE` | 503 | Required infrastructure dependency is temporarily unavailable (for example PostgreSQL, Redis, or proof verification backend) |
 | `ERR_INTERNAL` | 500 | Unexpected server-side error; details are logged server-side and never included in the response |
 
 ### HTTP Status Code Semantics
@@ -86,6 +87,7 @@ Rules:
 | `403 Forbidden` | Request is authenticated but the caller is not authorized for this operation; also used for Origin allowlist rejections | `ERR_FORBIDDEN` |
 | `409 Conflict` | Duplicate submission — the idempotency constraint on `event_id` was violated | `ERR_CONFLICT` |
 | `429 Too Many Requests` | Rate limit exceeded; `Retry-After` header indicates seconds until next permitted request | `ERR_RATE_LIMITED` |
+| `503 Service Unavailable` | A required dependency is temporarily unavailable; client should retry with backoff | `ERR_UNAVAILABLE` |
 | `500 Internal Server Error` | Unexpected server failure; client should retry with exponential backoff | `ERR_INTERNAL` |
 
 ### Examples
